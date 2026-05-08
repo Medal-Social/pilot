@@ -81,7 +81,7 @@ Pilot maintains a **single active release line**. There are no long-term support
 - Security fixes and bug fixes ship in the next release
 - Users upgrade to the latest version via `pilot update` or `brew upgrade pilot`
 - Breaking changes follow semver and are documented in the changelog (via Changesets)
-- Dependencies are automatically updated by Renovate, with security patches auto-merged
+- Dependencies are reviewed through consolidated maintenance PRs
 ```
 
 - [ ] **Step 2: Verify the file renders correctly**
@@ -361,7 +361,7 @@ What you can and cannot expect from Pilot's security posture.
 - **TLS by default:** All network communication (npm registry, GitHub API, AI providers) uses HTTPS. Node.js performs certificate verification by default. There are no TLS bypass flags in the codebase.
 - **Plugin permissions:** Plugins declare permissions in `plugin.toml`. Network access must be explicitly declared. Plugin manifests are validated with Zod schemas.
 - **Credential separation:** API keys and tokens are stored in environment variables or `~/.pilot/` config files, never embedded in application code. You can rotate credentials without reinstalling.
-- **Dependency security:** Dependencies are automatically monitored by Renovate and CodeQL. Security patches are auto-merged. The lockfile (`pnpm-lock.yaml`) is frozen in CI for reproducible builds.
+- **Dependency security:** Dependencies are reviewed through consolidated maintenance PRs and CodeQL. The lockfile (`pnpm-lock.yaml`) is frozen in CI for reproducible builds.
 - **Signed releases:** npm packages include provenance attestation. Binary releases are signed with Sigstore.
 - **Input validation:** Plugin manifests, TOML configs, and CLI arguments are validated before processing. The manifest parser is fuzz-tested with property-based testing (fast-check).
 
@@ -1251,8 +1251,8 @@ This task is manual — go to https://www.bestpractices.dev/en/projects/12447/si
 | `installation_standard_variables` | N/A | npm/Homebrew handle paths |
 | `installation_development_quick` | Met | Clone + 3 commands — see CONTRIBUTING.md |
 | `external_dependencies` | Met | package.json + pnpm-lock.yaml |
-| `dependency_monitoring` | Met | Renovate + CodeQL — see renovate.json, .github/workflows/codeql.yml |
-| `updateable_reused_components` | Met | npm ecosystem + Renovate auto-updates |
+| `dependency_monitoring` | Met | Consolidated maintenance PRs + CodeQL security scanning |
+| `updateable_reused_components` | Met | npm ecosystem + consolidated maintenance PRs |
 | `interfaces_current` | Met | No deprecated APIs, Biome lint catches deprecations |
 | `automated_integration_testing` | Met | Vitest in CI on every push/PR |
 | `regression_tests_added50` | Met | Policy in CONTRIBUTING.md, all recent fixes include tests |

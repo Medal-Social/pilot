@@ -652,10 +652,7 @@ permissions: {}
 jobs:
   auto-approve:
     runs-on: ubuntu-latest
-    if: |
-      github.actor == 'dependabot[bot]' ||
-      github.actor == 'renovate[bot]' ||
-      github.actor == 'medal-social-release-bot[bot]'
+    if: github.actor == 'medal-social-release-bot[bot]'
     steps:
       - name: Generate token from Medal Bot app
         id: app-token
@@ -680,7 +677,7 @@ jobs:
 ```bash
 cd <sdk-repo-root>
 git add .github/workflows/auto-approve.yml
-git commit -m "ci: add auto-approve for Dependabot and release bot PRs"
+git commit -m "ci: add auto-approve for release bot PRs"
 ```
 
 ---

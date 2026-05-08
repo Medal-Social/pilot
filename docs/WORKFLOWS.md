@@ -91,8 +91,6 @@ Pilot uses two workflow families:
 - **Triggers**: `pull_request_target` on `main`
 - **Purpose**: approve trusted bot PRs and enable auto-merge for release bot PRs
 - **Allowed actors**:
-  - `dependabot[bot]`
-  - `renovate[bot]`
   - `medal-social-release-bot[bot]`
 
 ## Agentic Workflows

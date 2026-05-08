@@ -203,9 +203,12 @@ describe('formatTable with TTY colors enabled', () => {
   let written: string;
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
   let isTTYDescriptor: PropertyDescriptor | undefined;
+  let previousNoColor: string | undefined;
 
   beforeEach(() => {
     written = '';
+    previousNoColor = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
     isTTYDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
@@ -220,6 +223,11 @@ describe('formatTable with TTY colors enabled', () => {
       Object.defineProperty(process.stdout, 'isTTY', isTTYDescriptor);
     } else {
       Object.defineProperty(process.stdout, 'isTTY', { value: undefined, configurable: true });
+    }
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
     }
   });
 

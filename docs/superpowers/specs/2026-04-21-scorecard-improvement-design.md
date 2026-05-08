@@ -14,7 +14,7 @@ The Scorecard runs weekly and on every push to main via `.github/workflows/score
 | Check | Current | After | Method |
 |---|---|---|---|
 | CII-Best-Practices | 0 | 10 | Badge already in README; next scan picks it up |
-| Pinned-Dependencies | 9 | 10 | Add npm ecosystem to dependabot.yml |
+| Pinned-Dependencies | 9 | 10 | Keep pinned manifests and consolidate dependency maintenance |
 | Signed-Releases | 0 | ~8 | Comes automatically after PR #36 → release fires |
 | Code-Review | 6 | ~8–9 | Improves naturally as PRs flow through with branch protection |
 | Packaging | -1 | -1 | Leave as-is; excluded from average, not hurting score |
@@ -24,25 +24,13 @@ The Scorecard runs weekly and on every push to main via `.github/workflows/score
 
 ## Changes
 
-### 1. `dependabot.yml` — add npm ecosystem
+### 1. Dependency maintenance policy
 
-**File:** `.github/dependabot.yml`
+**File:** `GOVERNANCE.md`
 
-Add an `npm` ecosystem entry alongside the existing `github-actions` entry. Dependabot will open weekly PRs to pin npm dependencies. Once merged, Pinned-Dependencies scores 10/10.
+Document that dependencies are kept current through consolidated maintenance PRs. Manifests and lockfiles remain pinned and reviewed together instead of relying on automated dependency update PR scheduling.
 
-```yaml
-version: 2
-updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-```
+Evidence for Scorecard should come from pinned manifests, lockfiles, and recent consolidated dependency maintenance PRs.
 
 ### 2. Move CODEOWNERS to `.github/CODEOWNERS`
 

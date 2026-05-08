@@ -189,12 +189,12 @@
 **Deliverable:** Badge page answer only
 
 ### 29. `dependency_monitoring` (MUST)
-**Status:** Renovate + CodeQL
-**Action:** Badge page answer — reference `renovate.json` and CodeQL workflow.
+**Status:** Consolidated maintenance PRs + CodeQL
+**Action:** Badge page answer — reference dependency maintenance PRs and CodeQL workflow.
 **Deliverable:** Badge page answer only
 
 ### 30. `updateable_reused_components` (MUST)
-**Status:** npm ecosystem + Renovate
+**Status:** npm ecosystem + consolidated maintenance PRs
 **Action:** Badge page answer.
 **Deliverable:** Badge page answer only
 

@@ -6,7 +6,7 @@
 
 **Architecture:** Pure configuration and documentation changes — no code logic. All changes land in a single PR from a new branch off `main`. After merge, a manual scorecard workflow trigger picks up all improvements at once.
 
-**Tech Stack:** GitHub Actions, dependabot, cosign (Sigstore), OpenSSF Scorecard
+**Tech Stack:** GitHub Actions, pinned package manifests, cosign (Sigstore), OpenSSF Scorecard
 
 **Spec:** `docs/superpowers/specs/2026-04-21-scorecard-improvement-design.md`
 
@@ -16,7 +16,7 @@
 
 | File | Action | Purpose |
 |---|---|---|
-| `.github/dependabot.yml` | Modify | Add npm ecosystem → Pinned-Dependencies 9→10 |
+| `GOVERNANCE.md` | Modify | Document consolidated dependency maintenance |
 | `.github/CODEOWNERS` | Create | Move from root for scorecard detection |
 | `CODEOWNERS` | Delete | Replaced by `.github/CODEOWNERS` |
 | `SECURITY.md` | Modify | Fix cosign verification regexp (wrong tag format) |
@@ -45,53 +45,32 @@ Expected: `Switched to a new branch 'fix/scorecard-improvements'`
 
 ---
 
-### Task 2: Add npm ecosystem to dependabot.yml
+### Task 2: Document dependency maintenance policy
 
 **Files:**
-- Modify: `.github/dependabot.yml`
+- Modify: `GOVERNANCE.md`
 
 - [ ] **Step 1: Open the file**
 
-Current content of `.github/dependabot.yml`:
+- Confirm the maintenance policy explains that dependencies are reviewed through consolidated maintenance PRs.
 
-```yaml
-version: 2
-updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-```
+- [ ] **Step 2: Update stale dependency automation language**
 
-- [ ] **Step 2: Replace with the extended version**
+Replace any automated dependency update scheduling instructions with the consolidated maintenance PR process.
 
-```yaml
-version: 2
-updates:
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-```
-
-- [ ] **Step 3: Verify the file is valid YAML**
+- [ ] **Step 3: Verify the file renders correctly**
 
 ```bash
-pnpm exec js-yaml .github/dependabot.yml 2>&1 || python3 -c "import yaml,sys; yaml.safe_load(open('.github/dependabot.yml'))" && echo "VALID"
+head -5 GOVERNANCE.md
 ```
 
-Expected: `VALID` (or no error output). If the command isn't available, just review the indentation manually — YAML is whitespace-sensitive.
+Expected: `# Governance` header visible.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add .github/dependabot.yml
-git commit -m "chore: add npm ecosystem to dependabot for dependency pinning"
+git add GOVERNANCE.md
+git commit -m "docs: document consolidated dependency maintenance"
 ```
 
 ---
@@ -218,10 +197,10 @@ Expected: branch pushed, pre-push hooks pass (lint + tests).
 
 ```bash
 gh pr create \
-  --title "fix: scorecard improvements — dependabot npm, CODEOWNERS, cosign regexp" \
+  --title "fix: scorecard improvements — dependency maintenance, CODEOWNERS, cosign regexp" \
   --body "$(cat <<'EOF'
 ## Summary
-- Add npm ecosystem to dependabot (Pinned-Dependencies 9→10)
+- Document consolidated dependency maintenance for pinned manifests
 - Move CODEOWNERS to .github/ for scorecard Code-Review detection
 - Fix cosign verification regexp in SECURITY.md (was refs/tags/v.*, should be refs/tags/@medalsocial/pilot@.*)
 

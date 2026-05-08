@@ -466,15 +466,56 @@ describe('readCodexEntries', () => {
   });
 
   it('uses homedir fallback when CODEX_HOME is not set', async () => {
-    // Remove CODEX_HOME so the homedir() fallback path runs
     const original = process.env.CODEX_HOME;
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    const sessionsDir = join(tmpDir, '.codex', 'sessions');
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(
+      join(sessionsDir, 'fallback.jsonl'),
+      [
+        JSON.stringify({
+          timestamp: '2026-04-22T10:00:00Z',
+          type: 'turn_context',
+          payload: { model: 'gpt-5' },
+        }),
+        JSON.stringify({
+          timestamp: '2026-04-22T10:01:00Z',
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: {
+                input_tokens: 500,
+                cached_input_tokens: 0,
+                output_tokens: 200,
+                reasoning_output_tokens: 0,
+                total_tokens: 700,
+              },
+            },
+          },
+        }),
+      ].join('\n')
+    );
     delete process.env.CODEX_HOME;
+    process.env.HOME = tmpDir;
+    process.env.USERPROFILE = tmpDir;
     try {
-      // ~/.codex/sessions won't have our test data — so returns empty
       const entries = await readCodexEntries(WINDOW);
-      expect(Array.isArray(entries)).toBe(true);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.model).toBe('gpt-5');
     } finally {
       if (original !== undefined) process.env.CODEX_HOME = original;
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
     }
   });
 

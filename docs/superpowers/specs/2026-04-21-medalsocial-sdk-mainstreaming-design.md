@@ -95,7 +95,7 @@ Brought over (SDK-compatible):
 | `docs.yml` | TypeDoc → GitHub Pages (keep, no changes) |
 | `codeql.yml` | Security scanning |
 | `scorecard.yml` | OSSF supply chain security score |
-| `auto-approve.yml` | Auto-approve Dependabot PRs |
+| `auto-approve.yml` | Auto-approve release bot PRs |
 | `auto-triage-issues.yml` | Label and route new issues |
 | `breaking-change-checker.yml` | Flag breaking API changes on PRs |
 | `pr-triage-agent.yml` | Label and assign PRs |
