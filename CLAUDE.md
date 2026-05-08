@@ -127,7 +127,7 @@ Errors use `KitError(errorCodes.KIT_*, detail?)` — per-plugin pattern, not wra
 
 `Exec` interface (in `shell/exec.ts`) is the only place that touches `child_process`. Pass `interactive: true` for commands that need a real TTY (editors, prompts) — otherwise stdin/stdout/stderr are piped and captured.
 
-Spec: `docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md`
+Design history for this work is kept outside the source repo with the rest of the Pilot spec archive.
 
 ## User-Facing Language
 
@@ -138,12 +138,7 @@ Spec: `docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md`
 
 ## Feature Tracker
 
-When a new spec or plan is created, update the Feature Tracker table in README.md:
-- Add new features with status (Planned / In Progress / Done)
-- Link to the relevant spec or plan document
-- Update status as features are implemented and merged
-
-The tracker is the single source of truth for what Pilot can do and what's coming next.
+When a new spec or plan is created, store it in the external spec-driven-development archive for Pilot. Keep README focused on current shipped behavior and operational entry points.
 
 ## Skill Routing
 
