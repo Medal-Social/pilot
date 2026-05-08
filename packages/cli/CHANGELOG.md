@@ -1,5 +1,11 @@
 # @medalsocial/pilot
 
+## 0.2.5
+
+### Patch Changes
+
+- [#109](https://github.com/Medal-Social/Pilot/pull/109) [`9192136`](https://github.com/Medal-Social/Pilot/commit/9192136a5580698d23e4073270ed53f1deaf08b3) Thanks [@alioftech](https://github.com/alioftech)! - Update dependencies to latest and remove dependency bot automation.
+
 ## 0.2.4
 
 ### Patch Changes
