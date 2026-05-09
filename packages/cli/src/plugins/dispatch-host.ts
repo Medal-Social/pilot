@@ -7,7 +7,7 @@ import type {
   MedalSocialContext,
   PilotHost,
   SyncEvent,
-} from '@medalsocial/pilot-runtime';
+} from '../runtime/types.js';
 
 export interface CreateDispatchHostArgs {
   log: Logger;

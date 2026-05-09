@@ -37,6 +37,10 @@
   },
   "exports": {
     ".": "./dist/index.js",
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -58,7 +62,6 @@
   },
   "dependencies": {
     "@medalsocial/kit": "workspace:*",
-    "@medalsocial/pilot-runtime": "workspace:*",
     "commander": "14.0.3",
     "ink": "7.0.2",
     "react": "19.2.6",
