@@ -119,7 +119,11 @@ export function formatJson(report: UsageReport): void {
         },
       ])
     ),
-    grandTotalCostUSD: report.grandTotalCostUSD,
+    // Mirror the per-provider null behaviour and the table footer: if any
+    // model lacks a known price the partial sum is misleading, so emit null.
+    grandTotalCostUSD: report.providers.some((p) => p.hasCostUnknown)
+      ? null
+      : report.grandTotalCostUSD,
   };
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
 }

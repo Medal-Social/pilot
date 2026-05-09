@@ -508,4 +508,46 @@ describe('Uninstall', () => {
     // Template still tracked because uninstall failed; retry via `pilot down`.
     expect(vi.mocked(state.removeTemplateFromState)).not.toHaveBeenCalledWith('pencil');
   });
+
+  it('keeps template state when registry no longer knows the template', async () => {
+    // Regression: previously cleanupSucceeded defaulted to true, so a missing
+    // registry entry caused the state to be removed without any uninstall —
+    // leaving dev tools installed but tracking gone.
+    const state = await import('../device/state.js');
+    const runner = await import('../installer/runner.js');
+    const fetchMod = await import('../registry/fetch.js');
+    vi.mocked(state.getInstalledTemplateNames).mockReturnValueOnce(['orphan']);
+    vi.mocked(fetchMod.fetchRegistry).mockResolvedValueOnce({
+      index: {
+        version: 1,
+        publishedAt: '',
+        sha256: 'x',
+        templates: [],
+      },
+      fromCache: false,
+      offline: false,
+    });
+    vi.mocked(state.removeTemplateFromState).mockClear();
+    vi.mocked(runner.runUninstallSteps).mockClear();
+
+    const { Uninstall } = await import('./Uninstall.js');
+    const { stdin } = render(<Uninstall />);
+    await delay();
+
+    stdin.write('y');
+    await delay();
+    stdin.write('y');
+    await delay();
+    stdin.write('y');
+    await delay();
+    stdin.write('y');
+    await delay();
+    stdin.write('y'); // step 4 confirm
+    await delay(300);
+    stdin.write('n');
+    await delay();
+
+    expect(vi.mocked(runner.runUninstallSteps)).not.toHaveBeenCalled();
+    expect(vi.mocked(state.removeTemplateFromState)).not.toHaveBeenCalledWith('orphan');
+  });
 });
