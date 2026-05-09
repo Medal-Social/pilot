@@ -1,5 +1,11 @@
 # @medalsocial/pilot
 
+## 0.2.6
+
+### Patch Changes
+
+- [#113](https://github.com/Medal-Social/Pilot/pull/113) [`1f6221a`](https://github.com/Medal-Social/Pilot/commit/1f6221a97779e44e5c8b6f04caaf0b42fb760416) Thanks [@alioftech](https://github.com/alioftech)! - Pilot Kit readiness: KIT_CONFIG env var honored, completions parity guardrail (bash/zsh/fish), `kit status --json` emits a structured envelope on missing config, plus internal fixes from review (Codex cached double-bill, Codex per-project filtering, ink browse/install render isolation, kit clean dedupes brew vs system caches, changeset auto-classifier fails on ambiguous, JSON grand total nulled when any cost is unknown).
+
 ## 0.2.5
 
 ### Patch Changes
