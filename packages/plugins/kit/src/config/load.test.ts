@@ -159,3 +159,40 @@ describe('expandTilde', () => {
     expect(expandTilde('/opt/kit', '/home/test')).toBe('/opt/kit');
   });
 });
+
+const baseConfig = {
+  name: 'kit',
+  repo: 'git@github.com:Medal-Social/kit.git',
+  machines: { 'ali-pro': { type: 'darwin' as const, user: 'ali' } },
+};
+
+describe('loadKitConfig — gitStrategy', () => {
+  it('defaults gitStrategy to "self" when absent', async () => {
+    const path = join(tmp, 'kit.config.json');
+    writeFileSync(path, JSON.stringify(baseConfig));
+    const cfg = await loadKitConfig({ env: { KIT_CONFIG: path, HOME: tmp } });
+    expect(cfg.gitStrategy).toBe('self');
+  });
+
+  it('preserves explicit "self"', async () => {
+    const path = join(tmp, 'kit.config.json');
+    writeFileSync(path, JSON.stringify({ ...baseConfig, gitStrategy: 'self' }));
+    const cfg = await loadKitConfig({ env: { KIT_CONFIG: path, HOME: tmp } });
+    expect(cfg.gitStrategy).toBe('self');
+  });
+
+  it('preserves explicit "none"', async () => {
+    const path = join(tmp, 'kit.config.json');
+    writeFileSync(path, JSON.stringify({ ...baseConfig, gitStrategy: 'none' }));
+    const cfg = await loadKitConfig({ env: { KIT_CONFIG: path, HOME: tmp } });
+    expect(cfg.gitStrategy).toBe('none');
+  });
+
+  it('rejects invalid gitStrategy values', async () => {
+    const path = join(tmp, 'kit.config.json');
+    writeFileSync(path, JSON.stringify({ ...baseConfig, gitStrategy: 'hybrid' }));
+    await expect(loadKitConfig({ env: { KIT_CONFIG: path, HOME: tmp } })).rejects.toMatchObject({
+      code: 'KIT_CONFIG_INVALID',
+    });
+  });
+});

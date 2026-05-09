@@ -14,6 +14,10 @@ export const kitConfigSchema = z.object({
   // Optional in the file — derived from the config file's directory at load time.
   // Only set if the kit repo lives somewhere other than the config's directory.
   repoDir: z.string().min(1).optional(),
+  // How pilot interacts with git for this kit's repo directory.
+  // "self" (default): kit dir is its own git repo; pilot pulls/fetches against it.
+  // "none": kit dir is plain files (e.g. inside a host monorepo); pilot performs no git ops.
+  gitStrategy: z.enum(['self', 'none']).optional(),
   machines: z.record(z.string(), machineSchema).refine((m) => Object.keys(m).length > 0, {
     message: 'machines map must not be empty',
   }),
