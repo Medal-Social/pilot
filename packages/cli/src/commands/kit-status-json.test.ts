@@ -12,6 +12,7 @@ describe('runKitStatus --json on missing config', () => {
   let origStderrWrite: typeof process.stderr.write;
   let origExit: typeof process.exit;
   let origKitConfig: string | undefined;
+  let origIsTTY: boolean | undefined;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -22,6 +23,7 @@ describe('runKitStatus --json on missing config', () => {
     origStderrWrite = process.stderr.write.bind(process.stderr);
     origExit = process.exit;
     origKitConfig = process.env.KIT_CONFIG;
+    origIsTTY = process.stdout.isTTY;
 
     process.stdout.write = ((s: string | Uint8Array) => {
       stdout += typeof s === 'string' ? s : Buffer.from(s).toString('utf8');
@@ -53,6 +55,7 @@ describe('runKitStatus --json on missing config', () => {
     consoleErrorSpy.mockRestore();
     if (origKitConfig === undefined) delete process.env.KIT_CONFIG;
     else process.env.KIT_CONFIG = origKitConfig;
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: origIsTTY });
   });
 
   it('emits structured JSON to stdout, nothing to stderr, sets exitCode 1', async () => {
@@ -77,7 +80,25 @@ describe('runKitStatus --json on missing config', () => {
     process.exitCode = prevExitCode;
   });
 
-  it('TTY path (no --json) still writes to stderr and exits 1', async () => {
+  it('emits JSON envelope when stdout is piped even without --json', async () => {
+    // Mirrors the success-path auto-detection (`!process.stdout.isTTY` ⇒ JSON).
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: false });
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    await expect(runKitStatus({ json: false })).resolves.toBeUndefined();
+
+    expect(process.exitCode).toBe(1);
+    expect(stderr).toBe('');
+    const parsed = JSON.parse(stdout);
+    expect(parsed).toMatchObject({ ok: false, error: 'kit_config_not_found' });
+
+    process.exitCode = prevExitCode;
+  });
+
+  it('TTY path (no --json, real terminal) still writes to stderr and exits 1', async () => {
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
+
     await expect(runKitStatus({ json: false })).rejects.toThrow(/__exit_1__/);
 
     expect(exitCode).toBe(1);

@@ -4,6 +4,7 @@ import {
   allFilesIgnored,
   classify,
   classifyCommit,
+  decideCheckExit,
   mapFileToPackage,
   matchesIgnoredGlob,
   semverDiff,
@@ -393,5 +394,35 @@ describe('classify — filename stability', () => {
       })
     );
     expect(a.file).not.toBe(b.file);
+  });
+});
+
+describe('decideCheckExit', () => {
+  it('passes when action is created and a changeset is already present', () => {
+    expect(decideCheckExit({ action: 'created' }, true)).toEqual({ exit: 0 });
+  });
+
+  it('fails when action is created and no changeset is present', () => {
+    const r = decideCheckExit({ action: 'created' }, false);
+    expect(r.exit).toBe(1);
+    expect(r.message).toContain('changeset is required');
+  });
+
+  it('fails when action is ambiguous and no changeset is present (regression: previously exit 0)', () => {
+    const r = decideCheckExit({ action: 'ambiguous' }, false);
+    expect(r.exit).toBe(1);
+    expect(r.message).toContain('changeset is required');
+  });
+
+  it('passes when action is ambiguous but a changeset is already present', () => {
+    expect(decideCheckExit({ action: 'ambiguous' }, true)).toEqual({ exit: 0 });
+  });
+
+  it('passes when action is skipped (no changeset needed)', () => {
+    expect(decideCheckExit({ action: 'skipped' }, false)).toEqual({ exit: 0 });
+  });
+
+  it('passes when action is user-skip (explicit /skip-changeset)', () => {
+    expect(decideCheckExit({ action: 'user-skip' }, false)).toEqual({ exit: 0 });
   });
 });
