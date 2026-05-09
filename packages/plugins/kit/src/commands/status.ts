@@ -26,6 +26,8 @@ export interface RenderStatusOpts {
   provider: FleetProvider;
   exec: Exec;
   user?: string;
+  /** "self" (default) → all git checks run. "none" → drop git rows; surface mismatch warnings. */
+  gitStrategy?: 'self' | 'none';
 }
 
 export interface StatusReport {
@@ -94,6 +96,8 @@ export async function renderStatus(opts: RenderStatusOpts): Promise<StatusReport
   // Repo dir / git
   const repoDirExists = existsSync(opts.kitRepoDir);
   const repoIsGit = repoDirExists && existsSync(`${opts.kitRepoDir}/.git`);
+  const strategy: 'self' | 'none' = opts.gitStrategy ?? 'self';
+
   if (!repoDirExists) {
     checks.push({
       id: 'repo-dir',
@@ -102,14 +106,55 @@ export async function renderStatus(opts: RenderStatusOpts): Promise<StatusReport
       detail: opts.kitRepoDir,
       hint: 'The kitRepoDir from kit.config.json does not exist on this machine. Clone the repo or fix the path.',
     });
+  } else if (strategy === 'none') {
+    if (repoIsGit) {
+      checks.push({
+        id: 'repo-dir',
+        label: 'repo directory',
+        status: 'warn',
+        detail: opts.kitRepoDir,
+        hint: 'gitStrategy=none but a `.git` is present in this directory. If you meant pilot to manage updates, set `"gitStrategy": "self"` (or remove the field).',
+      });
+    } else {
+      checks.push({
+        id: 'repo-dir',
+        label: 'repo directory',
+        status: 'ok',
+        detail: opts.kitRepoDir,
+      });
+    }
   } else if (!repoIsGit) {
-    checks.push({
-      id: 'repo-dir',
-      label: 'repo directory',
-      status: 'error',
-      detail: `${opts.kitRepoDir} (not a git repo)`,
-      hint: 'Run `git init` in this directory or point kitRepoDir at the actual kit clone.',
-    });
+    // gitStrategy=self but no .git here. Probe for an ancestor toplevel — a strong
+    // hint that the user moved the kit into a host monorepo and forgot to declare
+    // gitStrategy=none. Failure of `--show-toplevel` (no git binary, no ancestor)
+    // falls through to the original "not a git repo" error.
+    let parentToplevel: string | null = null;
+    try {
+      const r = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'rev-parse', '--show-toplevel']);
+      if (r.code === 0) {
+        const top = r.stdout.trim();
+        if (top && top !== opts.kitRepoDir) parentToplevel = top;
+      }
+    } catch {
+      // ignore — fall through
+    }
+    if (parentToplevel) {
+      checks.push({
+        id: 'repo-dir',
+        label: 'repo directory',
+        status: 'warn',
+        detail: opts.kitRepoDir,
+        hint: `Kit dir is inside a parent git repo (${parentToplevel}). If this is intentional, set "gitStrategy": "none" in kit.config.json.`,
+      });
+    } else {
+      checks.push({
+        id: 'repo-dir',
+        label: 'repo directory',
+        status: 'error',
+        detail: `${opts.kitRepoDir} (not a git repo)`,
+        hint: 'Run `git init` in this directory or point kitRepoDir at the actual kit clone.',
+      });
+    }
   } else {
     checks.push({
       id: 'repo-dir',
@@ -119,106 +164,119 @@ export async function renderStatus(opts: RenderStatusOpts): Promise<StatusReport
     });
   }
 
-  // Git HEAD
-  const headRev = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'rev-parse', 'HEAD']);
-  const kitCommit = headRev.code === 0 ? headRev.stdout.trim() : null;
-
-  // Working tree clean
-  const status = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'status', '--porcelain']);
-  const repoClean = status.code === 0 && status.stdout.trim().length === 0;
-  checks.push({
-    id: 'repo-clean',
-    label: 'working tree',
-    status: repoClean ? 'ok' : 'warn',
-    detail: repoClean
-      ? 'clean'
-      : `${status.stdout.trim().split('\n').length} uncommitted change(s)`,
-    hint: repoClean ? undefined : 'Commit or stash before `pilot kit update` to avoid surprises.',
-  });
-
-  // Remote URL match
+  // Variables produced by the git-checks block below. Hoisted so the StatusReport
+  // shape is stable when the block is skipped (gitStrategy=none, or no .git).
+  let kitCommit: string | null = null;
+  let repoClean = true;
   let remoteUrl: string | null = null;
   let remoteMatchesConfig: boolean | null = null;
-  const remote = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'remote', 'get-url', 'origin']);
-  if (remote.code === 0) {
-    remoteUrl = remote.stdout.trim();
-    if (opts.configRepoUrl) {
-      remoteMatchesConfig = remoteUrl === opts.configRepoUrl;
+  let commitsBehind = 0;
+
+  if (strategy === 'self' && repoIsGit) {
+    // Git HEAD
+    const headRev = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'rev-parse', 'HEAD']);
+    kitCommit = headRev.code === 0 ? headRev.stdout.trim() : null;
+
+    // Working tree clean
+    const status = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'status', '--porcelain']);
+    repoClean = status.code === 0 && status.stdout.trim().length === 0;
+    checks.push({
+      id: 'repo-clean',
+      label: 'working tree',
+      status: repoClean ? 'ok' : 'warn',
+      detail: repoClean
+        ? 'clean'
+        : `${status.stdout.trim().split('\n').length} uncommitted change(s)`,
+      hint: repoClean ? undefined : 'Commit or stash before `pilot kit update` to avoid surprises.',
+    });
+
+    // Remote URL match
+    const remote = await opts.exec.run('git', [
+      '-C',
+      opts.kitRepoDir,
+      'remote',
+      'get-url',
+      'origin',
+    ]);
+    if (remote.code === 0) {
+      remoteUrl = remote.stdout.trim();
+      if (opts.configRepoUrl) {
+        remoteMatchesConfig = remoteUrl === opts.configRepoUrl;
+        checks.push({
+          id: 'remote',
+          label: 'git remote',
+          status: remoteMatchesConfig ? 'ok' : 'warn',
+          detail: remoteUrl,
+          hint: remoteMatchesConfig
+            ? undefined
+            : `Configured repo is ${opts.configRepoUrl} but local origin is ${remoteUrl}.`,
+        });
+      } else {
+        checks.push({ id: 'remote', label: 'git remote', status: 'ok', detail: remoteUrl });
+      }
+    } else {
       checks.push({
         id: 'remote',
         label: 'git remote',
-        status: remoteMatchesConfig ? 'ok' : 'warn',
-        detail: remoteUrl,
-        hint: remoteMatchesConfig
-          ? undefined
-          : `Configured repo is ${opts.configRepoUrl} but local origin is ${remoteUrl}.`,
+        status: 'warn',
+        detail: 'no origin configured',
       });
-    } else {
-      checks.push({ id: 'remote', label: 'git remote', status: 'ok', detail: remoteUrl });
     }
-  } else {
-    checks.push({
-      id: 'remote',
-      label: 'git remote',
-      status: 'warn',
-      detail: 'no origin configured',
-    });
-  }
 
-  // Fetch + commits behind. Failure to determine sync state must surface as
-  // a warning — not a silent "up to date" — so users see auth/upstream issues.
-  const fetch = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'fetch', '--quiet']);
-  const behind = await opts.exec.run('git', [
-    '-C',
-    opts.kitRepoDir,
-    'rev-list',
-    'HEAD..@{u}',
-    '--count',
-  ]);
+    // Fetch + commits behind. Failure to determine sync state must surface as
+    // a warning — not a silent "up to date" — so users see auth/upstream issues.
+    const fetch = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'fetch', '--quiet']);
+    const behind = await opts.exec.run('git', [
+      '-C',
+      opts.kitRepoDir,
+      'rev-list',
+      'HEAD..@{u}',
+      '--count',
+    ]);
 
-  let commitsBehind = 0;
-  if (fetch.code !== 0) {
-    const detail = fetch.stderr.trim().split('\n').slice(0, 2).join(' · ') || 'fetch failed';
-    checks.push({
-      id: 'sync',
-      label: 'sync',
-      status: 'warn',
-      detail: `could not fetch (${detail})`,
-      hint: 'Check network and remote auth (`git -C <repoDir> fetch` to reproduce).',
-    });
-  } else if (behind.code !== 0) {
-    // Most common cause: no upstream tracking branch (`@{u}` undefined).
-    const stderr = behind.stderr.trim();
-    const noUpstream = /no upstream|unknown revision|HEAD/i.test(stderr);
-    checks.push({
-      id: 'sync',
-      label: 'sync',
-      status: 'warn',
-      detail: noUpstream
-        ? 'no upstream tracking branch'
-        : `could not determine sync (${stderr.split('\n')[0] || `exit ${behind.code}`})`,
-      hint: noUpstream
-        ? 'Set an upstream: `git -C <repoDir> branch --set-upstream-to=origin/<branch>`.'
-        : 'Inspect `git -C <repoDir> rev-list HEAD..@{u} --count` to debug.',
-    });
-  } else {
-    const parsed = Number.parseInt(behind.stdout.trim(), 10);
-    if (Number.isNaN(parsed)) {
+    if (fetch.code !== 0) {
+      const detail = fetch.stderr.trim().split('\n').slice(0, 2).join(' · ') || 'fetch failed';
       checks.push({
         id: 'sync',
         label: 'sync',
         status: 'warn',
-        detail: `unparseable rev-list output: ${behind.stdout.trim().slice(0, 60)}`,
+        detail: `could not fetch (${detail})`,
+        hint: 'Check network and remote auth (`git -C <repoDir> fetch` to reproduce).',
       });
-    } else {
-      commitsBehind = parsed;
+    } else if (behind.code !== 0) {
+      // Most common cause: no upstream tracking branch (`@{u}` undefined).
+      const stderr = behind.stderr.trim();
+      const noUpstream = /no upstream|unknown revision|HEAD/i.test(stderr);
       checks.push({
         id: 'sync',
         label: 'sync',
-        status: commitsBehind === 0 ? 'ok' : 'warn',
-        detail: commitsBehind === 0 ? 'up to date' : `${commitsBehind} commit(s) behind`,
-        hint: commitsBehind === 0 ? undefined : 'Run `pilot kit update` to pull and apply.',
+        status: 'warn',
+        detail: noUpstream
+          ? 'no upstream tracking branch'
+          : `could not determine sync (${stderr.split('\n')[0] || `exit ${behind.code}`})`,
+        hint: noUpstream
+          ? 'Set an upstream: `git -C <repoDir> branch --set-upstream-to=origin/<branch>`.'
+          : 'Inspect `git -C <repoDir> rev-list HEAD..@{u} --count` to debug.',
       });
+    } else {
+      const parsed = Number.parseInt(behind.stdout.trim(), 10);
+      if (Number.isNaN(parsed)) {
+        checks.push({
+          id: 'sync',
+          label: 'sync',
+          status: 'warn',
+          detail: `unparseable rev-list output: ${behind.stdout.trim().slice(0, 60)}`,
+        });
+      } else {
+        commitsBehind = parsed;
+        checks.push({
+          id: 'sync',
+          label: 'sync',
+          status: commitsBehind === 0 ? 'ok' : 'warn',
+          detail: commitsBehind === 0 ? 'up to date' : `${commitsBehind} commit(s) behind`,
+          hint: commitsBehind === 0 ? undefined : 'Run `pilot kit update` to pull and apply.',
+        });
+      }
     }
   }
 
@@ -246,6 +304,10 @@ export async function renderStatus(opts: RenderStatusOpts): Promise<StatusReport
   ]);
   const tools = { git, nix, gh, sudo };
   for (const [name, version] of Object.entries(tools)) {
+    // git tool is only required when gitStrategy=self. Skip the check
+    // entirely in 'none' mode so users who deliberately don't have git
+    // installed don't see a spurious error for tooling they don't need.
+    if (name === 'git' && strategy === 'none') continue;
     checks.push({
       id: `tool-${name}`,
       label: name,

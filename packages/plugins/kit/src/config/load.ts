@@ -25,6 +25,8 @@ export type LoadedKitConfig = KitConfig & {
   repoDir: string;
   /** Filesystem path of the kit.config.json that was loaded. */
   configPath: string;
+  /** Concrete strategy — defaulted to 'self' when absent in the file. */
+  gitStrategy: 'self' | 'none';
 };
 
 export function configCandidates(opts: LoadOpts = {}): string[] {
@@ -64,7 +66,12 @@ export async function loadKitConfig(opts: LoadOpts = {}): Promise<LoadedKitConfi
     } else {
       repoDir = dirname(path);
     }
-    return { ...result.data, repoDir, configPath: path };
+    return {
+      ...result.data,
+      gitStrategy: result.data.gitStrategy ?? 'self',
+      repoDir,
+      configPath: path,
+    };
   }
 
   throw new KitError(errorCodes.KIT_CONFIG_NOT_FOUND, candidates.join(', '));
