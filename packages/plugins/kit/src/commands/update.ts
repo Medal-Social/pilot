@@ -60,6 +60,8 @@ export interface RunUpdateOpts {
   machine: string;
   machineType: 'darwin' | 'nixos';
   kitRepoDir: string;
+  /** "self" (default) → run git fetch + pull. "none" → skip git ops entirely. */
+  gitStrategy?: 'self' | 'none';
   provider: FleetProvider;
   exec: Exec;
   sudoKeeper: SudoKeeper;
@@ -88,23 +90,29 @@ export async function runUpdate(opts: RunUpdateOpts): Promise<void> {
     return { value: undefined, detail: 'sudo cached' };
   });
 
-  await withPhase(hooks, 'pull', 'Pulling latest config', async () => {
-    await opts.exec.run('git', ['-C', opts.kitRepoDir, 'fetch', '--quiet']);
-    const behind = await opts.exec.run('git', [
-      '-C',
-      opts.kitRepoDir,
-      'rev-list',
-      'HEAD..@{u}',
-      '--count',
-    ]);
-    const count = behind.code === 0 ? Number.parseInt(behind.stdout.trim(), 10) || 0 : 0;
-    const pull = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'pull', '--ff-only']);
-    if (pull.code !== 0) throw new KitError(errorCodes.KIT_REPO_PULL_FAILED, pull.stderr);
-    return {
-      value: undefined,
-      detail: count > 0 ? `pulled ${count} commit(s)` : 'already up to date',
-    };
-  });
+  if (opts.gitStrategy === 'none') {
+    await withPhase(hooks, 'pull', 'Pulling latest config', async () => {
+      return { value: undefined, detail: 'skipped (gitStrategy=none)' };
+    });
+  } else {
+    await withPhase(hooks, 'pull', 'Pulling latest config', async () => {
+      await opts.exec.run('git', ['-C', opts.kitRepoDir, 'fetch', '--quiet']);
+      const behind = await opts.exec.run('git', [
+        '-C',
+        opts.kitRepoDir,
+        'rev-list',
+        'HEAD..@{u}',
+        '--count',
+      ]);
+      const count = behind.code === 0 ? Number.parseInt(behind.stdout.trim(), 10) || 0 : 0;
+      const pull = await opts.exec.run('git', ['-C', opts.kitRepoDir, 'pull', '--ff-only']);
+      if (pull.code !== 0) throw new KitError(errorCodes.KIT_REPO_PULL_FAILED, pull.stderr);
+      return {
+        value: undefined,
+        detail: count > 0 ? `pulled ${count} commit(s)` : 'already up to date',
+      };
+    });
+  }
 
   await withPhase(hooks, 'policy', 'Checking org policy', async () => {
     const required = await opts.provider.getRequiredApps({
