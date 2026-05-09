@@ -1,6 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { errorCodes, KitError } from '../errors.js';
 import type { FleetProvider } from '../provider/types.js';
 import type { Exec } from '../shell/exec.js';
 import { githubStep } from '../steps/github.js';
@@ -36,9 +37,14 @@ export interface RunInitOpts {
   platform: NodeJS.Platform;
   arch: string;
   user?: string;
+  /** When 'none', runInit refuses with KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY. Default 'self'. */
+  gitStrategy?: 'self' | 'none';
 }
 
 export async function runInit(opts: RunInitOpts): Promise<void> {
+  if (opts.gitStrategy === 'none') {
+    throw new KitError(errorCodes.KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY);
+  }
   const ctx = {
     exec: opts.exec,
     env: {
