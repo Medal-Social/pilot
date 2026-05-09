@@ -13,8 +13,8 @@ import type {
   SkillStep,
   ZedExtStep,
 } from '../registry/types.js';
+import type { Exec } from '../shell/exec.js';
 import type { PackageManagers } from './detect.js';
-import type { Exec } from './exec.js';
 
 const DEFAULT_SKILLS_DIR = join(homedir(), '.pilot', 'skills');
 
@@ -24,7 +24,9 @@ export interface StepContext {
 
 // --- pkg ---
 
-function resolvePkg(step: PkgStep, managers: PackageManagers): { pm: string; pkg: string } | null {
+type ResolvedPkg = { pm: 'nix' | 'brew' | 'winget'; pkg: string };
+
+function resolvePkg(step: PkgStep, managers: PackageManagers): ResolvedPkg | null {
   // Known limitation: manager priority (nix > brew > winget) is computed fresh
   // on both install and uninstall. If the environment changes between install
   // and uninstall (e.g. Nix is installed later), the uninstall call may target
@@ -49,11 +51,8 @@ async function checkPkg(step: PkgStep, managers: PackageManagers, exec: Exec): P
     const r = await exec.run('brew', ['list', pkg]);
     return r.code === 0;
   }
-  if (pm === 'winget') {
-    const r = await exec.run('winget', ['list', '--id', pkg]);
-    return r.code === 0;
-  }
-  return false;
+  const r = await exec.run('winget', ['list', '--id', pkg]);
+  return r.code === 0;
 }
 
 async function executePkg(step: PkgStep, managers: PackageManagers, exec: Exec): Promise<void> {

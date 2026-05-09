@@ -19,4 +19,11 @@ describe('<Completion />', () => {
     expect(lastFrame()).toMatch(/failed/i);
     expect(lastFrame()).toContain('rebuild failed');
   });
+
+  it('renders error state without an optional message', () => {
+    const { lastFrame } = render(<Completion ok={false} machine="ali-pro" elapsedSeconds={65} />);
+
+    expect(lastFrame()).toMatch(/failed/i);
+    expect(lastFrame()).toContain('1m 05s');
+  });
 });

@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpStep, NpmStep, PkgStep, SkillStep, ZedExtStep } from '../registry/types.js';
 import { loadSettings, saveSettings } from '../settings.js';
+import type { Exec } from '../shell/exec.js';
 import type { PackageManagers } from './detect.js';
-import type { Exec } from './exec.js';
 import { checkStep, executeStep, unexecuteStep } from './steps.js';
 
 vi.mock('../settings.js', () => ({
@@ -79,6 +79,13 @@ describe('pkg step', () => {
     expect(await checkStep(pkgStep, nixOnly, exec)).toBe(true);
   });
 
+  it('checkStep returns false when no package manager can satisfy the package', async () => {
+    const exec = makeExec(0);
+
+    await expect(checkStep(pkgStep, noneAvailable, exec)).resolves.toBe(false);
+    expect(exec.run).not.toHaveBeenCalled();
+  });
+
   it('executeStep runs nix profile install when nix is available', async () => {
     const exec = makeExec(0);
     await executeStep(pkgStep, allManagers, exec);
@@ -109,6 +116,13 @@ describe('pkg step', () => {
     await expect(unexecuteStep(pkgStep, brewOnly, exec)).rejects.toMatchObject({
       code: 'UP_STEP_FAILED',
     });
+  });
+
+  it('unexecuteStep is a no-op when no package manager can satisfy the package', async () => {
+    const exec = makeExec(0);
+
+    await expect(unexecuteStep(pkgStep, noneAvailable, exec)).resolves.toBeUndefined();
+    expect(exec.run).not.toHaveBeenCalled();
   });
 
   it('executeStep runs winget install when only winget is available', async () => {
@@ -188,6 +202,14 @@ describe('npm step', () => {
     const exec = makeExec(0);
     await executeStep(npmStep, npmOnly, exec);
     expect(exec.run).toHaveBeenCalledWith('npm', ['install', '-g', '@remotion/cli']);
+  });
+
+  it('executeStep throws when npm install exits non-zero', async () => {
+    const exec = makeExec(1);
+
+    await expect(executeStep(npmStep, npmOnly, exec)).rejects.toMatchObject({
+      code: 'UP_STEP_FAILED',
+    });
   });
 
   it('unexecuteStep runs npm uninstall -g', async () => {
@@ -419,5 +441,68 @@ describe('zed-extension step', () => {
       auto_install_extensions: Record<string, boolean>;
     };
     expect(written.auto_install_extensions.rust).toBeUndefined();
+  });
+
+  it('uses APPDATA for Zed settings on Windows', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const appData = join(tmpDir, 'AppData', 'Roaming');
+    process.env.APPDATA = appData;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const zedDir = join(appData, 'Zed');
+      mkdirSync(zedDir, { recursive: true });
+      writeFileSync(join(zedDir, 'settings.json'), JSON.stringify({ auto_install_extensions: {} }));
+
+      const exec = makeExec(0);
+      await executeStep(zedStep, allManagers, exec);
+
+      const written = JSON.parse(readFileSync(join(zedDir, 'settings.json'), 'utf-8')) as {
+        auto_install_extensions: Record<string, boolean>;
+      };
+      expect(written.auto_install_extensions.rust).toBe(true);
+    } finally {
+      delete process.env.APPDATA;
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    }
+  });
+
+  it('uses Application Support for Zed settings on macOS', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      const zedDir = join(tmpDir, 'Library', 'Application Support', 'Zed');
+      mkdirSync(zedDir, { recursive: true });
+      writeFileSync(join(zedDir, 'settings.json'), JSON.stringify({ auto_install_extensions: {} }));
+
+      const exec = makeExec(0);
+      await executeStep(zedStep, allManagers, exec);
+
+      const written = JSON.parse(readFileSync(join(zedDir, 'settings.json'), 'utf-8')) as {
+        auto_install_extensions: Record<string, boolean>;
+      };
+      expect(written.auto_install_extensions.rust).toBe(true);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    }
+  });
+
+  it('uses ~/.config for Zed settings on Linux', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      const zedDir = join(tmpDir, '.config', 'zed');
+      mkdirSync(zedDir, { recursive: true });
+      writeFileSync(join(zedDir, 'settings.json'), JSON.stringify({ auto_install_extensions: {} }));
+
+      const exec = makeExec(0);
+      await executeStep(zedStep, allManagers, exec);
+
+      const written = JSON.parse(readFileSync(join(zedDir, 'settings.json'), 'utf-8')) as {
+        auto_install_extensions: Record<string, boolean>;
+      };
+      expect(written.auto_install_extensions.rust).toBe(true);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    }
   });
 });

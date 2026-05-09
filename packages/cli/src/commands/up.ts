@@ -12,12 +12,12 @@ import {
 } from '../device/state.js';
 import { errorCodes, PilotError } from '../errors.js';
 import { detectPackageManagers } from '../installer/detect.js';
-import { realExec } from '../installer/exec.js';
 import type { RunCallbacks } from '../installer/runner.js';
 import { runInstallSteps } from '../installer/runner.js';
 import { fetchRegistry } from '../registry/fetch.js';
 import type { TemplateEntry } from '../registry/types.js';
 import { loadSettings, saveSettings } from '../settings.js';
+import { realExec } from '../shell/exec.js';
 
 async function wireCrewSpecialist(entry: TemplateEntry): Promise<void> {
   if (!entry.crew) return;

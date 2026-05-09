@@ -31,4 +31,27 @@ describe('getSystemInfo', () => {
     expect(info.os).toBe('Linux');
     expect(info.chip).toBe('Intel');
   });
+
+  it('uses the raw platform name for non-darwin/non-linux platforms', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 1 }),
+      spawn: vi.fn(),
+    };
+
+    const info = await getSystemInfo({ exec, platform: 'freebsd', arch: 'x64', user: 'ali' });
+
+    expect(info).toEqual({ os: 'freebsd', osVersion: '', chip: 'Intel', user: 'ali' });
+  });
+
+  it('falls back when darwin version probes fail or return blank names', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '\n', stderr: '', code: 1 }),
+      spawn: vi.fn(),
+    };
+
+    const info = await getSystemInfo({ exec, platform: 'darwin', arch: 'x64', user: 'ali' });
+
+    expect(info.os).toBe('macOS');
+    expect(info.osVersion).toBe('');
+  });
 });

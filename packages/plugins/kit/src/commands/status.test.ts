@@ -36,6 +36,33 @@ describe('renderStatus', () => {
     expect(report.machineId).toBe('ali-pro');
   });
 
+  it('records config path and matching remote when configured', async () => {
+    const exec = {
+      run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+        if (cmd === 'git' && args.includes('get-url')) {
+          return { stdout: 'git@github.com:Medal-Social/kit.git\n', stderr: '', code: 0 };
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+
+    const report = await renderStatus({
+      machine: 'ali-pro',
+      kitRepoDir: dir,
+      machineFile: join(dir, 'ali-pro.apps.json'),
+      configPath: join(dir, 'kit.config.json'),
+      configRepoUrl: 'git@github.com:Medal-Social/kit.git',
+      provider: new LocalProvider(),
+      exec,
+    });
+
+    expect(report.configPath).toBe(join(dir, 'kit.config.json'));
+    expect(report.remoteMatchesConfig).toBe(true);
+    expect(report.checks.find((c) => c.id === 'config')?.status).toBe('ok');
+    expect(report.checks.find((c) => c.id === 'remote')?.status).toBe('ok');
+  });
+
   it('omits org policy section when LocalProvider returns empty', async () => {
     const exec = {
       run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
@@ -110,6 +137,25 @@ describe('renderStatus', () => {
     expect(machineCheck?.hint).toContain('mystery-host');
   });
 
+  it('marks hostname as known when present in known machines', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+
+    const report = await renderStatus({
+      machine: 'ali-pro',
+      kitRepoDir: dir,
+      machineFile: join(dir, 'ali-pro.apps.json'),
+      knownMachines: ['ali-pro', 'ada-air'],
+      provider: new LocalProvider(),
+      exec,
+    });
+
+    expect(report.hostnameKnown).toBe(true);
+    expect(report.checks.find((c) => c.id === 'machine')?.status).toBe('ok');
+  });
+
   it('warns (not ok) when git fetch fails', async () => {
     const exec = {
       run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
@@ -157,6 +203,76 @@ describe('renderStatus', () => {
     expect(sync?.status).toBe('warn');
     expect(sync?.detail).toContain('upstream');
     expect(sync?.hint).toMatch(/set-upstream-to/);
+  });
+
+  it('warns when rev-list fails for a non-upstream reason', async () => {
+    const exec = {
+      run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+        if (cmd === 'git' && args.includes('rev-list')) {
+          return { stdout: '', stderr: 'fatal: bad revision', code: 128 };
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+
+    const report = await renderStatus({
+      machine: 'ali-pro',
+      kitRepoDir: dir,
+      machineFile: join(dir, 'ali-pro.apps.json'),
+      provider: new LocalProvider(),
+      exec,
+    });
+
+    const sync = report.checks.find((c) => c.id === 'sync');
+    expect(sync?.detail).toContain('could not determine sync');
+    expect(sync?.hint).toContain('rev-list');
+  });
+
+  it('warns when rev-list output is not numeric', async () => {
+    const exec = {
+      run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+        if (cmd === 'git' && args.includes('rev-list')) {
+          return { stdout: 'later\n', stderr: '', code: 0 };
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+
+    const report = await renderStatus({
+      machine: 'ali-pro',
+      kitRepoDir: dir,
+      machineFile: join(dir, 'ali-pro.apps.json'),
+      provider: new LocalProvider(),
+      exec,
+    });
+
+    const sync = report.checks.find((c) => c.id === 'sync');
+    expect(sync?.detail).toContain('unparseable');
+  });
+
+  it('warns when the repo is behind upstream', async () => {
+    const exec = {
+      run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+        if (cmd === 'git' && args.includes('rev-list')) {
+          return { stdout: '3\n', stderr: '', code: 0 };
+        }
+        return { stdout: '', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+
+    const report = await renderStatus({
+      machine: 'ali-pro',
+      kitRepoDir: dir,
+      machineFile: join(dir, 'ali-pro.apps.json'),
+      provider: new LocalProvider(),
+      exec,
+    });
+
+    expect(report.commitsBehind).toBe(3);
+    expect(report.checks.find((c) => c.id === 'sync')?.detail).toBe('3 commit(s) behind');
   });
 
   it('records tool versions when present and errors when absent', async () => {

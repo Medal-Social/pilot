@@ -55,7 +55,7 @@ This document provides a security assurance case for Pilot, justifying why the p
 - Manifest parser is fuzz-tested with fast-check (1000+ randomized inputs)
 - Plugin IDs are computed deterministically from validated data
 - SHA-256 checksums in `manifest.json` detect tampered files during updates
-- Planned: content signing, script safety scanning, runtime sandboxing (see `docs/plans/09-skill-security.md`)
+- Planned: content signing, script safety scanning, runtime sandboxing, tracked in the external design history
 
 **CWE coverage:**
 - CWE-20 (Improper Input Validation): Zod schemas reject invalid manifests
