@@ -51,25 +51,24 @@ export async function runUp(template?: string): Promise<void> {
   const { index, offline } = await fetchRegistry({ cacheDir });
 
   if (!template) {
-    let installing = false;
+    let selected: string | null = null;
     const installedNames = getInstalledTemplateNames();
     const { UpBrowse } = await import('../screens/Up.js');
-    const { waitUntilExit } = render(
+    const { unmount, waitUntilExit } = render(
       React.createElement(UpBrowse, {
         registry: index,
         installedNames,
         onInstall: (entry: TemplateEntry) => {
-          if (installing) return;
-          installing = true;
-          runUp(entry.name)
-            .catch((err: Error) => process.stderr.write(`${err.message}\n`))
-            .finally(() => {
-              installing = false;
-            });
+          if (selected !== null) return;
+          selected = entry.name;
+          unmount();
         },
       })
     );
     await waitUntilExit();
+    if (selected !== null) {
+      await runUp(selected);
+    }
     return;
   }
 

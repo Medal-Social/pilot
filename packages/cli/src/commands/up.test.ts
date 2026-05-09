@@ -56,7 +56,10 @@ vi.mock('../settings.js', () => ({
 }));
 
 vi.mock('ink', () => ({
-  render: vi.fn().mockReturnValue({ waitUntilExit: vi.fn().mockResolvedValue(undefined) }),
+  render: vi.fn().mockReturnValue({
+    unmount: vi.fn(),
+    waitUntilExit: vi.fn().mockResolvedValue(undefined),
+  }),
   Text: 'Text',
   Box: 'Box',
   useApp: () => ({ exit: vi.fn() }),
@@ -213,13 +216,39 @@ describe('runUp', () => {
     await expect(runUp('remotion')).rejects.toMatchObject({ code: 'UP_STEP_FAILED' });
   });
 
-  it('ignores concurrent onInstall calls while install is in progress', async () => {
+  it('unmounts the browse UI before triggering the nested install render', async () => {
     const react = await import('react');
     const { render } = await import('ink');
     (render as ReturnType<typeof vi.fn>).mockClear();
 
     type OnInstall = (entry: { name: string }) => void;
     let capturedOnInstall: OnInstall | undefined;
+    let callCounter = 0;
+    let unmountCallOrder = -1;
+    let secondRenderCallOrder = -1;
+
+    // Browse render: unmount() resolves waitUntilExit, mirroring real ink behaviour.
+    let resolveBrowseExit: (() => void) | undefined;
+    const browseExitPromise = new Promise<void>((r) => {
+      resolveBrowseExit = r;
+    });
+    const unmountSpy = vi.fn(() => {
+      unmountCallOrder = ++callCounter;
+      resolveBrowseExit?.();
+    });
+    (render as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
+      unmount: unmountSpy,
+      waitUntilExit: vi.fn().mockReturnValue(browseExitPromise),
+    }));
+    // Install render: records its call order so we can assert ordering.
+    (render as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      secondRenderCallOrder = ++callCounter;
+      return {
+        unmount: vi.fn(),
+        waitUntilExit: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
     (react.default.createElement as ReturnType<typeof vi.fn>).mockImplementationOnce(
       (_type: unknown, props: Record<string, unknown> | null) => {
         if (props?.onInstall) capturedOnInstall = props.onInstall as OnInstall;
@@ -228,7 +257,7 @@ describe('runUp', () => {
     );
 
     const { runUp } = await import('./up.js');
-    void runUp(); // browse mode
+    const runPromise = runUp(); // browse mode
     // flush: fetchRegistry await + dynamic import('../screens/Up.js') await
     await new Promise((r) => setTimeout(r, 0));
 
@@ -243,21 +272,34 @@ describe('runUp', () => {
     };
 
     capturedOnInstall?.(fakeEntry);
-    capturedOnInstall?.(fakeEntry); // second call — should be blocked
-    // flush: runUp('remotion') fetchRegistry + dynamic import('../screens/up/UpInstall.js')
-    await new Promise((r) => setTimeout(r, 0));
+    capturedOnInstall?.(fakeEntry); // second call — should be ignored (selected already set)
+    await runPromise;
 
-    // 1 for UpBrowse + 1 for UpInstall = 2, not 3
+    // unmount() must run before the second render() call.
+    expect(unmountSpy).toHaveBeenCalledTimes(1);
+    expect(unmountCallOrder).toBeGreaterThan(0);
+    expect(secondRenderCallOrder).toBeGreaterThan(unmountCallOrder);
+    // 1 for UpBrowse + 1 for UpInstall = 2 (not 3 — second onInstall ignored).
     expect(render).toHaveBeenCalledTimes(2);
   });
 
-  it('writes to stderr when the nested runUp from onInstall rejects', async () => {
+  it('propagates the nested runUp rejection from onInstall after the browse UI exits', async () => {
     const { fetchRegistry } = await import('../registry/fetch.js');
     (fetchRegistry as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       index: { version: 1, publishedAt: '', sha256: 'x', templates: [] },
       fromCache: false,
       offline: false,
     });
+
+    const { render } = await import('ink');
+    let resolveBrowseExit: (() => void) | undefined;
+    const browseExitPromise = new Promise<void>((r) => {
+      resolveBrowseExit = r;
+    });
+    (render as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ({
+      unmount: vi.fn(() => resolveBrowseExit?.()),
+      waitUntilExit: vi.fn().mockReturnValue(browseExitPromise),
+    }));
 
     const react = await import('react');
     type OnInstall = (entry: { name: string }) => void;
@@ -269,17 +311,14 @@ describe('runUp', () => {
       }
     );
 
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const { runUp } = await import('./up.js');
-    void runUp(); // browse mode
+    const promise = runUp(); // browse mode
     await new Promise((r) => setTimeout(r, 0));
 
     // Template name not in the registry → nested runUp rejects with UP_TEMPLATE_NOT_FOUND.
     capturedOnInstall?.({ name: 'unknown-template' });
-    await new Promise((r) => setTimeout(r, 0));
 
-    expect(stderrSpy).toHaveBeenCalled();
-    stderrSpy.mockRestore();
+    await expect(promise).rejects.toMatchObject({ code: 'UP_TEMPLATE_NOT_FOUND' });
   });
 
   it('records each step label in the installed-template state', async () => {
