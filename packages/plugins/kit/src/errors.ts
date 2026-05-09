@@ -8,6 +8,7 @@ export const errorCodes = {
   KIT_NIX_INSTALL_FAILED: 'KIT_NIX_INSTALL_FAILED',
   KIT_SSH_KEYGEN_FAILED: 'KIT_SSH_KEYGEN_FAILED',
   KIT_GITHUB_AUTH_FAILED: 'KIT_GITHUB_AUTH_FAILED',
+  KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY: 'KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY',
   KIT_REPO_CLONE_FAILED: 'KIT_REPO_CLONE_FAILED',
   KIT_REPO_PULL_FAILED: 'KIT_REPO_PULL_FAILED',
   KIT_SECRETS_INIT_FAILED: 'KIT_SECRETS_INIT_FAILED',
@@ -36,6 +37,8 @@ const userMessages: Record<ErrorCode, string> = {
   KIT_SSH_KEYGEN_FAILED: 'Could not generate SSH key. Check that ~/.ssh is writable, then retry.',
   KIT_GITHUB_AUTH_FAILED:
     'Could not authenticate to GitHub. Try `gh auth login --hostname github.com --git-protocol https --web` manually, then retry.',
+  KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY:
+    '`pilot kit init` is not supported when gitStrategy=none. The kit lives inside a host repository — clone the host repo manually, then run `pilot kit update`.',
   KIT_REPO_CLONE_FAILED:
     'Could not clone the kit repository. Verify GitHub auth (`ssh -T git@github.com`) and the repo URL in kit.config.json.',
   KIT_REPO_PULL_FAILED:
