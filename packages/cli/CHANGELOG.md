@@ -1,5 +1,11 @@
 # @medalsocial/pilot
 
+## 0.5.1
+
+### Patch Changes
+
+- [#131](https://github.com/Medal-Social/Pilot/pull/131) [`0581ca5`](https://github.com/Medal-Social/Pilot/commit/0581ca52364805a9c218f15716e1c11cb48c8be1) Thanks [@alioftech](https://github.com/alioftech)! - `pilot update` now detects the installation method (`homebrew` / `npm` / `nix` / `unknown`) and runs the right upgrade command for each. Previously the self-updater always ran `npm install -g @medalsocial/pilot@latest`, which silently failed (or installed to a path off the user's PATH) for Homebrew-installed users. Now Homebrew installs run `brew upgrade pilot`, Nix installs surface a clear `UPDATE_NIX_NOT_SUPPORTED` error pointing at flake/home-manager, and npm/unknown installs keep the existing behaviour.
+
 ## 0.5.0
 
 ### Minor Changes
