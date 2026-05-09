@@ -7,8 +7,10 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   addApp,
+  configCandidates,
   deleteTargets,
   detectMachine,
+  errorCodes,
   formatBytes,
   KitError,
   type LoadedKitConfig,
@@ -301,6 +303,16 @@ export async function runKitStatus(opts: RunKitStatusOpts = {}): Promise<void> {
       printHumanReadable(report);
     }
   } catch (e) {
+    if (opts.json && e instanceof KitError && e.code === errorCodes.KIT_CONFIG_NOT_FOUND) {
+      const envelope = {
+        ok: false as const,
+        error: 'kit_config_not_found',
+        message: 'No kit.config.json found.',
+        searched: configCandidates(),
+      };
+      process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
+      process.exit(1);
+    }
     fail(e);
   }
 }
