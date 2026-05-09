@@ -54,6 +54,29 @@ describe('renderStatus — gitStrategy=none', () => {
     expect(repoDir?.status).toBe('warn');
     expect(repoDir?.hint).toMatch(/gitStrategy=none.*\.git.*is present/i);
   });
+
+  it('does not push a tool-git check when gitStrategy=none and git is missing', async () => {
+    const exec = {
+      run: vi.fn().mockImplementation(async (cmd: string, _args: string[]) => {
+        if (cmd === 'git') return { stdout: '', stderr: 'command not found', code: 127 };
+        return { stdout: '1.0', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+    const report = await renderStatus({
+      machine: 'ali-pro',
+      kitRepoDir: dir,
+      machineFile: join(dir, 'ali-pro.apps.json'),
+      gitStrategy: 'none',
+      provider: new LocalProvider(),
+      exec,
+    });
+    const ids = report.checks.map((c) => c.id);
+    expect(ids).not.toContain('tool-git');
+    expect(ids).toContain('tool-nix');
+    expect(ids).toContain('tool-gh');
+    expect(ids).toContain('tool-sudo');
+  });
 });
 
 describe('renderStatus — gitStrategy=self with parent toplevel', () => {

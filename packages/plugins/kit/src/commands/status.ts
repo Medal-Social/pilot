@@ -304,6 +304,10 @@ export async function renderStatus(opts: RenderStatusOpts): Promise<StatusReport
   ]);
   const tools = { git, nix, gh, sudo };
   for (const [name, version] of Object.entries(tools)) {
+    // git tool is only required when gitStrategy=self. Skip the check
+    // entirely in 'none' mode so users who deliberately don't have git
+    // installed don't see a spurious error for tooling they don't need.
+    if (name === 'git' && strategy === 'none') continue;
     checks.push({
       id: `tool-${name}`,
       label: name,
