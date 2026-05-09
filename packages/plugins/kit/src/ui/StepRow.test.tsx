@@ -16,4 +16,11 @@ describe('<StepRow />', () => {
     expect(lastFrame()).toContain(glyph);
     expect(lastFrame()).toContain('Nix');
   });
+
+  it('omits detail text when detail is absent', () => {
+    const { lastFrame } = render(<StepRow status="pending" label="Nix" />);
+
+    expect(lastFrame()).toContain('Nix');
+    expect(lastFrame()).not.toContain('installed');
+  });
 });

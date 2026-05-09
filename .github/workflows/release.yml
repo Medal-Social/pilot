@@ -38,7 +38,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm quality
+      - run: pnpm quality:100
 
       - name: Create release PR or publish packages
         id: changesets

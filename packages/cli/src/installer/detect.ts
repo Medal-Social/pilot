@@ -1,7 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Exec } from './exec.js';
+import type { Exec } from '../shell/exec.js';
 
 export interface PackageManagers {
   nix: boolean;

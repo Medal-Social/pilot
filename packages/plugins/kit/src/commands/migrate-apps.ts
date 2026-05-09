@@ -28,7 +28,6 @@ function injectLetBinding(source: string, machine: string): string {
   const existingLetRe = /(\}:\s*let\b)([\s\S]*?)(\bin\s*\{)/;
   const letMatch = existingLetRe.exec(source);
   if (letMatch && letMatch.index !== undefined) {
-    if (source.includes(appsLine)) return source; // already has it
     const head = source.slice(0, letMatch.index);
     const tail = source.slice(letMatch.index + letMatch[0].length);
     const letKw = letMatch[1];

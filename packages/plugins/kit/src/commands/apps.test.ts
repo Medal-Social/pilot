@@ -26,8 +26,25 @@ describe('apps command', () => {
     expect(listApps(path).casks).toEqual(['1password', 'zed']);
   });
 
-  it('addApp throws KIT_APPS_DUPLICATE on duplicate (case-insensitive)', async () => {
-    await expect(addApp(path, 'ZED')).rejects.toBeInstanceOf(KitError);
+  it('addApp inserts a new brew when requested', async () => {
+    await addApp(path, 'ripgrep', 'brews');
+    expect(listApps(path).brews).toEqual(['ripgrep']);
+  });
+
+  it('addApp throws KIT_APPS_DUPLICATE on duplicate entries', async () => {
+    await expect(addApp(path, 'zed')).rejects.toMatchObject({
+      code: 'KIT_APPS_DUPLICATE',
+      cause: 'zed',
+    });
+  });
+
+  it('addApp reports duplicate details for brew entries', async () => {
+    await addApp(path, 'ripgrep', 'brews');
+
+    await expect(addApp(path, 'ripgrep', 'brews')).rejects.toMatchObject({
+      code: 'KIT_APPS_DUPLICATE',
+      cause: 'ripgrep',
+    });
   });
 
   it('addApp throws KIT_APPS_INVALID_NAME on bad name', async () => {
@@ -37,5 +54,11 @@ describe('apps command', () => {
   it('removeApp removes a cask', async () => {
     await removeApp(path, 'zed');
     expect(listApps(path).casks).toEqual([]);
+  });
+
+  it('removeApp leaves other app kinds untouched', async () => {
+    await addApp(path, 'ripgrep', 'brews');
+    await removeApp(path, 'zed');
+    expect(listApps(path)).toEqual({ casks: [], brews: ['ripgrep'] });
   });
 });

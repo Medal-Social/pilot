@@ -17,3 +17,7 @@ coverage/
 .playwright-mcp/
 .claude/scheduled_tasks*
 .worktrees/
+
+# Editor settings — managed locally per-developer
+.vscode/
+.idea/

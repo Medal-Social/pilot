@@ -42,3 +42,28 @@ export const realExec: Exec = {
     });
   },
 };
+
+/**
+ * Run a command with stdio inherited from the parent process so the user can
+ * see live output and the child can read stdin (interactive subprocesses,
+ * passthrough to other CLIs, etc.). Returns the child's exit code.
+ *
+ * Kept here next to `realExec` so subprocess execution stays centralized in
+ * one file — call sites elsewhere must import from this module rather than
+ * reaching for `node:child_process` directly.
+ */
+export function runInherit(
+  cmd: string,
+  args: readonly string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
+): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd,
+      env: opts.env ?? process.env,
+      stdio: 'inherit',
+    });
+    child.on('exit', (code) => resolve(code ?? 0));
+    child.on('error', () => resolve(1));
+  });
+}

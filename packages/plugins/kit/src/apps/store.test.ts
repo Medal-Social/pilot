@@ -29,6 +29,17 @@ describe('loadAppsJson', () => {
     writeFileSync(path, '{ not json');
     expect(() => loadAppsJson(path)).toThrow(KitError);
   });
+
+  it('throws KIT_APPS_CORRUPT when the file cannot be read', () => {
+    expect(() => loadAppsJson(join(dir, 'missing.apps.json'))).toThrow(KitError);
+  });
+
+  it('throws KIT_APPS_CORRUPT when the schema is invalid', () => {
+    const path = join(dir, 'apps.json');
+    writeFileSync(path, JSON.stringify({ casks: ['zed'], brews: ['not valid name'] }));
+
+    expect(() => loadAppsJson(path)).toThrow(KitError);
+  });
 });
 
 describe('writeAppsJson', () => {

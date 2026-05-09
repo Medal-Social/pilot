@@ -12,12 +12,12 @@ import {
 } from '../device/state.js';
 import { errorCodes, PilotError } from '../errors.js';
 import { detectPackageManagers } from '../installer/detect.js';
-import { realExec } from '../installer/exec.js';
 import type { RunCallbacks } from '../installer/runner.js';
 import { runUninstallSteps } from '../installer/runner.js';
 import { fetchRegistry } from '../registry/fetch.js';
 import type { TemplateEntry } from '../registry/types.js';
 import { loadSettings, saveSettings } from '../settings.js';
+import { realExec } from '../shell/exec.js';
 
 async function removeCrewSpecialist(entry: TemplateEntry, templateName: string): Promise<void> {
   // Prefer the specialist recorded at install time — the registry entry may have

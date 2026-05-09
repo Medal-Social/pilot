@@ -14,6 +14,7 @@ Thanks for your interest in contributing to Pilot!
 ```bash
 pnpm dev          # Start CLI in watch mode
 pnpm quality      # Lint, typecheck, repo tests, package tests
+pnpm quality:100  # Full Pilot 100 gate: quality, repo/package coverage, worker build, knip, secret scan, verifier
 pnpm test         # Run tests
 pnpm test:repo    # Verify repo guardrails (hooks, workflows, metadata)
 pnpm lint         # Check code style
@@ -25,17 +26,21 @@ pnpm knip:check   # Detect unused files, exports, and dependencies
 ## Project Structure
 
 ```
-packages/
-  cli/              # Main CLI package (@medalsocial/pilot)
-  plugins/
-    kit/            # Machine management plugin
-    sanity/         # CMS plugin
-    pencil/         # Design tools plugin
+pilot/
+  packages/
+    cli/                  # @medalsocial/pilot
+    plugins/
+      kit/                # @medalsocial/kit bundled plugin
+  workers/pilot-landing/  # Cloudflare Worker landing/install surface
+  tests/                  # repo-level guardrail tests
+  scripts/                # repo automation and verification scripts
 ```
+
+Quality-sensitive paths: `packages/cli`, `packages/plugins/kit`, and `workers/pilot-landing`.
 
 ## Pull Requests
 
-- Create a feature branch from `main`
+- Create a feature branch from `dev`
 - Write tests for new functionality
 - Ensure all tests pass before submitting
 - Follow existing code conventions (TypeScript strict, Biome linting)
@@ -101,6 +106,7 @@ AI assistance is allowed, but contributors are responsible for the final patch.
 - Pilot uses Changesets for releases; create one with `pnpm changeset`
 - Conventional commits are enforced through the `commit-msg` hook
 - `pnpm quality` is the baseline maintainer check before opening a PR
+- `pnpm quality:100` is required for quality, workflow, package, plugin, or worker changes and includes repo guardrail coverage, worker validation, and workspace package coverage
 - Releases are published only through GitHub Actions after the controlled release workflow validates the branch
 
 ## Testing Policy
@@ -110,15 +116,16 @@ AI assistance is allowed, but contributors are responsible for the final patch.
 - Co-locate tests: `Component.tsx` → `Component.test.tsx`
 - Use `ink-testing-library` for React Ink component tests
 - Use `vitest` with `describe`/`it`/`expect`
-- Coverage target is **100%** — we aim for full coverage on all new code
-- Hard minimums enforced by CI: **95% statements, 90% branches, 100% functions**
-- PRs that drop coverage below these thresholds are blocked
+- Coverage target is **100%** — we aim for full coverage while the project is still small
+- Hard minimums enforced by CI allow at most a 3-point drift: **97% statements, 97% functions, 97% lines**.
+- Branch minimums are package-specific and anchored near current coverage: **95%** for the CLI and **90%** for the kit plugin.
+- PRs that drop coverage below these thresholds are blocked; recover toward 100% before widening scope
 
 **Regression tests:** When fixing a bug, first write a test that reproduces the bug (it should fail), then fix the bug and verify the test passes. This prevents the same bug from recurring.
 
 ## Code Review Policy
 
-All pull requests require approval from at least one reviewer who is not the author before merging. This is enforced by GitHub branch protection on the `main` branch.
+All pull requests require approval from at least one reviewer who is not the author before merging. This is enforced by GitHub branch protection on the protected branches.
 
 **Reviewers should check:**
 - Code correctness and edge cases

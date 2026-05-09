@@ -15,4 +15,13 @@ describe('<Spinner />', () => {
     const { lastFrame } = render(<Spinner label="Working" elapsedSeconds={62} />);
     expect(lastFrame()).toContain('1m 02s');
   });
+
+  it('renders seconds, details, and wraps frame indexes', () => {
+    const { lastFrame } = render(
+      <Spinner label="Working" elapsedSeconds={5} detail="fetching" frame={11} />
+    );
+    expect(lastFrame()).toContain('5s');
+    expect(lastFrame()).toContain('fetching');
+    expect(lastFrame()).toContain('⠙');
+  });
 });

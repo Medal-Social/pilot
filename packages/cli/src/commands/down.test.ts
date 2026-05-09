@@ -35,7 +35,7 @@ vi.mock('../installer/detect.js', () => ({
   }),
 }));
 
-vi.mock('../installer/exec.js', () => ({ realExec: {} }));
+vi.mock('../shell/exec.js', () => ({ realExec: {} }));
 
 vi.mock('../device/state.js', () => ({
   getInstalledTemplateNames: vi.fn().mockReturnValue(['remotion']),

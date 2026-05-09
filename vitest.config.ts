@@ -6,11 +6,12 @@ export default defineConfig({
     environment: 'node',
     coverage: {
       provider: 'v8',
+      include: ['scripts/pilot-100.mjs'],
       thresholds: {
-        statements: 95,
-        branches: 90,
-        functions: 100,
-        lines: 95,
+        statements: 97,
+        branches: 95,
+        functions: 97,
+        lines: 97,
       },
       exclude: [
         'node_modules/**',

@@ -36,7 +36,7 @@ vi.mock('../installer/detect.js', () => ({
   }),
 }));
 
-vi.mock('../installer/exec.js', () => ({ realExec: {} }));
+vi.mock('../shell/exec.js', () => ({ realExec: {} }));
 
 vi.mock('../installer/runner.js', () => ({
   runInstallSteps: vi.fn().mockResolvedValue(undefined),
