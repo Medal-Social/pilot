@@ -7,8 +7,10 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   addApp,
+  configCandidates,
   deleteTargets,
   detectMachine,
+  errorCodes,
   formatBytes,
   KitError,
   type LoadedKitConfig,
@@ -301,6 +303,22 @@ export async function runKitStatus(opts: RunKitStatusOpts = {}): Promise<void> {
       printHumanReadable(report);
     }
   } catch (e) {
+    // Mirror the success-path detection: --json explicit OR stdout is piped.
+    // Without this, `pilot kit status | jq` gets nothing on the error path.
+    const wantsJson = opts.json || !process.stdout.isTTY;
+    if (wantsJson && e instanceof KitError && e.code === errorCodes.KIT_CONFIG_NOT_FOUND) {
+      const envelope = {
+        ok: false as const,
+        error: 'kit_config_not_found',
+        message: 'No kit.config.json found.',
+        searched: configCandidates(),
+      };
+      // Use exitCode (not exit()) so stdout flushes the envelope cleanly when
+      // output is piped — `process.exit()` does not wait for drain.
+      process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
+      process.exitCode = 1;
+      return;
+    }
     fail(e);
   }
 }

@@ -171,7 +171,11 @@ export function Uninstall() {
               for (const t of templates) {
                 const otherInstalled = remaining.filter((n) => n !== t);
                 const entry = index.templates.find((e) => e.name === t);
-                let cleanupSucceeded = true;
+                // Default to false: only mark cleanup successful when we
+                // actually ran the uninstall steps. If the registry no longer
+                // knows about this template, we can't safely remove it — keep
+                // the state so the user retains visibility and can retry.
+                let cleanupSucceeded = false;
                 if (entry) {
                   try {
                     await runUninstallSteps(
@@ -182,10 +186,10 @@ export function Uninstall() {
                       t,
                       noop
                     );
+                    cleanupSucceeded = true;
                   } catch {
                     // Keep template tracked so the user can retry cleanup via
                     // `pilot down <template>` instead of losing state visibility.
-                    cleanupSucceeded = false;
                   }
                 }
                 if (cleanupSucceeded) {
@@ -195,8 +199,10 @@ export function Uninstall() {
                 // else: template remains tracked so the user can retry cleanup.
               }
             } catch {
-              // best-effort if registry unavailable
-              for (const t of templates) removeTemplateFromState(t);
+              // Registry unavailable (network down, UP_REGISTRY_TAMPERED, etc.).
+              // Do NOT clear state — the dev tools are still installed on the
+              // machine, and removing the tracking now would leave the user
+              // with no way to retry via `pilot down <template>`.
             }
             addStep('Dev tools removed', false);
             setBusy(false);

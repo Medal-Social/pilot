@@ -62,12 +62,12 @@ export async function runUsage(opts: UsageOptions = {}): Promise<void> {
     }
   }
 
-  const codexEntries = await readCodexEntries(window);
+  const codexEntries = await readCodexEntries(window, cwd);
   const codexModels = groupByModel(codexEntries);
   if (codexModels.length > 0) {
     providers.push({
       provider: 'codex',
-      scope: 'all sessions',
+      scope: projectName,
       models: codexModels,
       totalCostUSD: codexModels.reduce((s, m) => s + m.costUSD, 0),
       hasCostUnknown: codexModels.some((m) => m.costUnknown),

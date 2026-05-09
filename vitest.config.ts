@@ -13,7 +13,20 @@ export default defineConfig({
         functions: 97,
         lines: 97,
       },
-      exclude: ['node_modules/**', 'dist/**', '**/types.ts', '**/*.d.ts', '**/bin/pilot.ts'],
+      exclude: [
+        'node_modules/**',
+        'dist/**',
+        '**/types.ts',
+        '**/*.d.ts',
+        '**/bin/pilot.ts',
+        // program.ts is the command-wiring entry point extracted from bin/pilot.ts;
+        // exercised end-to-end via the CLI, not via direct unit tests of every
+        // commander action handler.
+        '**/program.ts',
+        // Pure re-export shim from shell/exec.ts (the real impl is tested there);
+        // v8 coverage counts the re-exports as uncovered functions.
+        '**/installer/exec.ts',
+      ],
     },
   },
 });

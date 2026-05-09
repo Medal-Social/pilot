@@ -18,7 +18,7 @@ export { renderStatus } from './commands/status.js';
 export type { UpdateHooks, UpdatePhase } from './commands/update.js';
 export { realSudoKeeper, runMigrations, runUpdate } from './commands/update.js';
 export type { LoadedKitConfig } from './config/load.js';
-export { loadKitConfig } from './config/load.js';
+export { configCandidates, loadKitConfig } from './config/load.js';
 export type { KitConfig, Machine } from './config/schema.js';
 export { detectMachine } from './detect.js';
 export { errorCodes, KitError } from './errors.js';

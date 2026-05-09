@@ -57,4 +57,4 @@ Pilot maintains a **single active release line**. There are no long-term support
 - Security fixes and bug fixes ship in the next release
 - Users upgrade to the latest version via `pilot update` or `brew upgrade pilot`
 - Breaking changes follow semver and are documented in the changelog (via Changesets)
-- Dependencies are updated through Dependabot PRs, with trusted bot PRs auto-merged after required checks pass
+- Dependencies are reviewed through consolidated maintenance PRs

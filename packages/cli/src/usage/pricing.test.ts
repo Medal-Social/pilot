@@ -42,4 +42,16 @@ describe('computeCodexCost', () => {
   it('returns 0 cost for zero tokens', () => {
     expect(computeCodexCost('gpt-5', 0, 0, 0)).toBeCloseTo(0);
   });
+
+  it('charges cached input tokens at the cached rate, not the full rate (no double-bill)', () => {
+    // Codex's `total_token_usage.input_tokens` already INCLUDES `cached_input_tokens`,
+    // so callers pass the raw counters: inputTokens=1000, cachedInputTokens=400.
+    // gpt-5: inputPerM=30, cachedInputPerM=7.5, outputPerM=60
+    // Expected: full = (1000 - 400) * 30/M = 0.018,
+    //           cached = 400 * 7.5/M = 0.003,
+    //           output = 100 * 60/M = 0.006
+    // Total = 0.027 (NOT 0.039, which would double-charge the cached portion).
+    const cost = computeCodexCost('gpt-5', 1000, 400, 100);
+    expect(cost).toBeCloseTo(0.027, 6);
+  });
 });

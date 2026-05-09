@@ -2,4 +2,4 @@ pnpm lint
 pnpm typecheck
 pnpm test:repo
 pnpm test -- --run
-pnpm secret:scan
+pnpm secret:lint

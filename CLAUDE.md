@@ -72,7 +72,8 @@ conventional commits, and writes a stable `auto-<pr>-<sha7>-<slug>.md` file.
   → patch, `feat!:` or `BREAKING CHANGE:` → major. Ambiguous PRs (no
   conventional commit and no override) exit 2 and route to the AI fallback
   (`changeset-ai-fallback.yml`).
-- Dependabot PRs: runtime dep → semver-derived patch/minor/major, dev-dep → skip.
+- Dependency maintenance PRs: include an explicit changeset when publishable runtime
+  dependency updates affect `@medalsocial/pilot`; dev-only updates normally skip.
 
 **Comment commands (post on the PR):**
 
