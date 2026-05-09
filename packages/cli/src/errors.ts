@@ -4,6 +4,7 @@
 export const errorCodes = {
   UPDATE_CHECK_FAILED: 'UPDATE_CHECK_FAILED',
   UPDATE_INSTALL_FAILED: 'UPDATE_INSTALL_FAILED',
+  UPDATE_NIX_NOT_SUPPORTED: 'UPDATE_NIX_NOT_SUPPORTED',
   UNINSTALL_NOT_INSTALLED: 'UNINSTALL_NOT_INSTALLED',
   UNINSTALL_BACKUP_FAILED: 'UNINSTALL_BACKUP_FAILED',
   UNINSTALL_STEP_FAILED: 'UNINSTALL_STEP_FAILED',
@@ -31,6 +32,8 @@ const userMessages: Record<ErrorCode, string> = {
   UPDATE_CHECK_FAILED: 'Unable to check for updates — are you online?',
   UPDATE_INSTALL_FAILED:
     'Update could not be installed. Please try again or visit medalsocial.com/pilot for help.',
+  UPDATE_NIX_NOT_SUPPORTED:
+    'Pilot is managed by Nix on this machine. Update via your flake or home-manager configuration, not `pilot update`.',
   UNINSTALL_NOT_INSTALLED: 'Pilot is not installed. Nothing to remove.',
   UNINSTALL_BACKUP_FAILED: 'Could not back up knowledge files. Uninstall aborted for safety.',
   UNINSTALL_STEP_FAILED: 'A removal step failed — continuing with remaining steps.',
