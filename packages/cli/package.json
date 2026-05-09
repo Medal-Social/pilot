@@ -1,6 +1,6 @@
 {
   "name": "@medalsocial/pilot",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "type": "module",
   "description": "Your AI crew, ready to fly. Medal Social's AI-powered CLI platform.",
   "license": "Apache-2.0",
