@@ -148,7 +148,7 @@ description = "Call Medal Social API endpoints"
 ### Testing
 
 - SDK unit tests remain in the SDK repo (no change)
-- Pilot integration: E2E test with `MEDAL_API_KEY=test_mock` in isolated `PILOT_HOME`
+- Pilot integration: E2E test with `MEDAL_API_KEY` set to a placeholder mock token in an isolated `PILOT_HOME`
 - `createMedalTools` has its own unit tests in `pilot/index.test.ts`
 
 ---

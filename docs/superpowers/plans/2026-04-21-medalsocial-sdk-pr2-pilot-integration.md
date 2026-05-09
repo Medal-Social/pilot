@@ -455,6 +455,6 @@ After this SDK PR is published (version bumped and released via changesets), a t
 1. Add `@medalsocial/sdk` to `packages/cli/package.json` dependencies
 2. Import `createMedalClient` and `createMedalTools` in Pilot's crew tool registry
 3. Add `MEDAL_API_KEY` to Pilot's config schema
-4. Write an E2E test with `MEDAL_API_KEY=test_mock` in an isolated `PILOT_HOME`
+4. Write an E2E test with `MEDAL_API_KEY` set to a placeholder mock token in an isolated `PILOT_HOME`
 
 That work is out of scope for this plan — it requires a published version of `@medalsocial/sdk` from PR 1+2.

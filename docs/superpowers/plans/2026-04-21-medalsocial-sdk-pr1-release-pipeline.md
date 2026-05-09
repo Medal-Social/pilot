@@ -100,7 +100,7 @@ Replace the relevant sections so `package.json` becomes:
     "version": "changeset version",
     "release": "pnpm build && changeset publish && npx jsr publish",
     "secret:scan": "node scripts/secretlint-repo.mjs",
-    "secret:scan:staged": "node scripts/secretlint-staged.mjs",
+    "secret:scan-staged": "node scripts/secretlint-staged.mjs",
     "knip:report": "knip --reporter json --no-exit-code",
     "knip:check": "knip"
   },

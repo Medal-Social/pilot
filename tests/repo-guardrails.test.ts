@@ -30,13 +30,13 @@ describe('repo guardrails', () => {
       'knip:check': 'knip',
     });
     expect(pkg.scripts?.['secret:scan']).toContain('secretlint');
-    expect(pkg.scripts?.['secret:scan:staged']).toContain('secretlint');
+    expect(pkg.scripts?.['secret:scan-staged']).toContain('secretlint');
     expect(pkg.engines?.node).toBe('>=24.0.0 <25');
   });
 
   it('uses contributor hooks for lint-staged, commitlint, tests, and secret scanning', () => {
     expect(read('.husky/pre-commit')).toContain('pnpm lint-staged');
-    expect(read('.husky/pre-commit')).toContain('pnpm secret:scan:staged');
+    expect(read('.husky/pre-commit')).toContain('pnpm secret:scan-staged');
     expect(read('.husky/commit-msg')).toContain('commitlint');
     expect(read('.husky/pre-push')).toContain('pnpm lint');
     expect(read('.husky/pre-push')).toContain('pnpm typecheck');
