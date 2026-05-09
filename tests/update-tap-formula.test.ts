@@ -156,6 +156,12 @@ describe('stampFormula', () => {
 describe('main (file IO + env)', () => {
   let dir: string;
   let formulaPath: string;
+  // Capture stdout/stderr so the messages emitted by main() don't leak into
+  // the test runner's output.
+  const origStdoutWrite = process.stdout.write.bind(process.stdout);
+  const origStderrWrite = process.stderr.write.bind(process.stderr);
+  let stdout: string;
+  let stderr: string;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'tap-formula-'));
@@ -166,37 +172,77 @@ describe('main (file IO + env)', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  function captureStdio(): void {
+    stdout = '';
+    stderr = '';
+    process.stdout.write = ((s: string | Uint8Array) => {
+      stdout += typeof s === 'string' ? s : Buffer.from(s).toString('utf8');
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((s: string | Uint8Array) => {
+      stderr += typeof s === 'string' ? s : Buffer.from(s).toString('utf8');
+      return true;
+    }) as typeof process.stderr.write;
+  }
+
+  function restoreStdio(): void {
+    process.stdout.write = origStdoutWrite;
+    process.stderr.write = origStderrWrite;
+  }
+
   it('writes a stamped formula to FORMULA_PATH on success', async () => {
     await writeFile(formulaPath, SOURCE_FORMULA);
-    const code = await main([], {
-      TAG_NAME: '@medalsocial/pilot@0.5.1',
-      FORMULA_PATH: formulaPath,
-      SHA_pilot_darwin_arm64: SHAS.darwinArm64,
-      SHA_pilot_darwin_x64: SHAS.darwinX64,
-      SHA_pilot_linux_arm64: SHAS.linuxArm64,
-      SHA_pilot_linux_x64: SHAS.linuxX64,
-    });
+    captureStdio();
+    let code: number;
+    try {
+      code = await main([], {
+        TAG_NAME: '@medalsocial/pilot@0.5.1',
+        FORMULA_PATH: formulaPath,
+        SHA_pilot_darwin_arm64: SHAS.darwinArm64,
+        SHA_pilot_darwin_x64: SHAS.darwinX64,
+        SHA_pilot_linux_arm64: SHAS.linuxArm64,
+        SHA_pilot_linux_x64: SHAS.linuxX64,
+      });
+    } finally {
+      restoreStdio();
+    }
     expect(code).toBe(0);
+    expect(stdout).toContain(`Stamped ${formulaPath}`);
+    expect(stderr).toBe('');
     const out = await readFile(formulaPath, 'utf8');
     expect(out).toContain('  version "0.5.1"');
     expect(out).not.toContain('releases/latest/download');
   });
 
-  it('returns 1 when TAG_NAME is missing', async () => {
-    const code = await main([], {});
+  it('returns 1 with a stderr message when TAG_NAME is missing', async () => {
+    captureStdio();
+    let code: number;
+    try {
+      code = await main([], {});
+    } finally {
+      restoreStdio();
+    }
     expect(code).toBe(1);
+    expect(stderr).toContain('TAG_NAME is required');
   });
 
-  it('returns 1 when a SHA env var is missing', async () => {
-    const code = await main([], {
-      TAG_NAME: '@medalsocial/pilot@0.5.1',
-      FORMULA_PATH: formulaPath,
-      SHA_pilot_darwin_arm64: SHAS.darwinArm64,
-      // SHA_pilot_darwin_x64 omitted on purpose
-      SHA_pilot_linux_arm64: SHAS.linuxArm64,
-      SHA_pilot_linux_x64: SHAS.linuxX64,
-    });
+  it('returns 1 with a stderr message when a SHA env var is missing', async () => {
+    captureStdio();
+    let code: number;
+    try {
+      code = await main([], {
+        TAG_NAME: '@medalsocial/pilot@0.5.1',
+        FORMULA_PATH: formulaPath,
+        SHA_pilot_darwin_arm64: SHAS.darwinArm64,
+        // SHA_pilot_darwin_x64 omitted on purpose
+        SHA_pilot_linux_arm64: SHAS.linuxArm64,
+        SHA_pilot_linux_x64: SHAS.linuxX64,
+      });
+    } finally {
+      restoreStdio();
+    }
     expect(code).toBe(1);
+    expect(stderr).toContain('Missing SHA256');
   });
 });
 
@@ -209,5 +255,39 @@ describe('repo source formula matches the test fixture', () => {
     // If this fails, update the SOURCE_FORMULA fixture above (or fix the
     // repo source if it drifted from the documented shape).
     expect(repoFormula).toBe(SOURCE_FORMULA);
+  });
+});
+
+describe('CLI invocation (end-to-end)', () => {
+  // Spawn the script as a real process so we exercise the
+  // `import.meta.url === resolvePath(process.argv[1])` guard. A previous
+  // version compared raw argv[1] (which can be relative) against the
+  // resolved fileURL, so the guard never matched and main() was never
+  // executed — silently shipping the placeholder formula to the tap.
+  it('exits non-zero with a stderr message when TAG_NAME is missing', async () => {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
+    const scriptPath = fileURLToPath(new URL('../scripts/update-tap-formula.mjs', import.meta.url));
+
+    let exitCode: number | null = null;
+    let stderr = '';
+    let stdout = '';
+    try {
+      const result = await execFileAsync(process.execPath, [scriptPath], {
+        env: { PATH: process.env.PATH ?? '' },
+      });
+      stdout = result.stdout;
+      stderr = result.stderr;
+      exitCode = 0;
+    } catch (e) {
+      const err = e as { code?: number; stdout?: string; stderr?: string };
+      exitCode = err.code ?? -1;
+      stdout = err.stdout ?? '';
+      stderr = err.stderr ?? '';
+    }
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('TAG_NAME is required');
+    expect(stdout).toBe('');
   });
 });

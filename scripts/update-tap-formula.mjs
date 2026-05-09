@@ -30,6 +30,7 @@
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const TAG_PREFIX = '@medalsocial/pilot@';
@@ -123,7 +124,7 @@ function readShasFromEnv(env) {
 export async function main(_argv = process.argv, env = process.env) {
   const tag = env.TAG_NAME;
   if (!tag) {
-    console.error('TAG_NAME is required (e.g. @medalsocial/pilot@0.5.1).');
+    process.stderr.write('TAG_NAME is required (e.g. @medalsocial/pilot@0.5.1).\n');
     return 1;
   }
   const formulaPath = env.FORMULA_PATH ?? 'homebrew-pilot/pilot.rb';
@@ -133,24 +134,28 @@ export async function main(_argv = process.argv, env = process.env) {
     .filter(([, v]) => !v)
     .map(([k]) => k);
   if (missing.length > 0) {
-    console.error(
-      `Missing SHA256 env vars for: ${missing.join(', ')}. Set SHA_pilot_<asset> for each.`
+    process.stderr.write(
+      `Missing SHA256 env vars for: ${missing.join(', ')}. Set SHA_pilot_<asset> for each.\n`
     );
     return 1;
   }
   const source = await readFile(formulaPath, 'utf8');
   const stamped = stampFormula(source, { version, shas });
   await writeFile(formulaPath, stamped);
-  console.log(`Stamped ${formulaPath} for ${tag} (version=${version}).`);
+  process.stdout.write(`Stamped ${formulaPath} for ${tag} (version=${version}).\n`);
   return 0;
 }
 
 // Run main() when this file is invoked directly (i.e. not imported by a test).
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// `process.argv[1]` may be relative (e.g. when CI runs `node
+// scripts/update-tap-formula.mjs`) so resolve it before comparing — without
+// `resolvePath` the strict equality fails and main() never runs, silently
+// shipping the placeholder formula to the tap repo.
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {
   main().then(
     (code) => process.exit(code),
     (err) => {
-      console.error(err.message);
+      process.stderr.write(`${err.message}\n`);
       process.exit(1);
     }
   );
