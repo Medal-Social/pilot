@@ -29,14 +29,14 @@ describe('repo guardrails', () => {
       'knip:report': 'knip --reporter json --no-exit-code',
       'knip:check': 'knip',
     });
-    expect(pkg.scripts?.['secret:scan']).toContain('secretlint');
-    expect(pkg.scripts?.['secret:scan:staged']).toContain('secretlint');
+    expect(pkg.scripts?.['secret:lint']).toContain('secretlint');
+    expect(pkg.scripts?.['secret:lint-staged']).toContain('secretlint');
     expect(pkg.engines?.node).toBe('>=24.0.0 <25');
   });
 
   it('uses contributor hooks for lint-staged, commitlint, tests, and secret scanning', () => {
     expect(read('.husky/pre-commit')).toContain('pnpm lint-staged');
-    expect(read('.husky/pre-commit')).toContain('pnpm secret:scan:staged');
+    expect(read('.husky/pre-commit')).toContain('pnpm secret:lint-staged');
     expect(read('.husky/commit-msg')).toContain('commitlint');
     expect(read('.husky/pre-push')).toContain('pnpm lint');
     expect(read('.husky/pre-push')).toContain('pnpm typecheck');
@@ -46,7 +46,7 @@ describe('repo guardrails', () => {
 
   it('configures CI for changesets, secret scanning, and knip', () => {
     expect(read('.github/workflows/ci.yml')).toContain('pnpm quality');
-    expect(read('.github/workflows/ci.yml')).toContain('pnpm secret:scan');
+    expect(read('.github/workflows/ci.yml')).toContain('pnpm secret:lint');
     expect(read('.github/workflows/ci.yml')).toContain('pnpm knip:check');
     expect(read('.github/workflows/release.yml')).toContain('changesets/action');
     expect(read('.github/workflows/release.yml')).toContain('pnpm release');

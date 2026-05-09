@@ -681,4 +681,171 @@ describe('readCodexEntries', () => {
     const entries = await readCodexEntries(WINDOW);
     expect(entries).toHaveLength(0);
   });
+
+  it('filters Codex sessions by projectDir via session_meta.payload.cwd', async () => {
+    const projectDir = join(tmpDir, 'my-project');
+    const otherDir = join(tmpDir, 'other-project');
+
+    await writeSession('matching.jsonl', [
+      { type: 'session_meta', payload: { cwd: projectDir } },
+      { timestamp: '2026-04-22T10:00:00Z', type: 'turn_context', payload: { model: 'gpt-5' } },
+      {
+        timestamp: '2026-04-22T10:01:00Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 1234,
+              cached_input_tokens: 0,
+              output_tokens: 456,
+              reasoning_output_tokens: 0,
+              total_tokens: 1690,
+            },
+          },
+        },
+      },
+    ]);
+
+    await writeSession('non-matching.jsonl', [
+      { type: 'session_meta', payload: { cwd: otherDir } },
+      { timestamp: '2026-04-22T10:00:00Z', type: 'turn_context', payload: { model: 'gpt-5' } },
+      {
+        timestamp: '2026-04-22T10:01:00Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 9999,
+              cached_input_tokens: 0,
+              output_tokens: 9999,
+              reasoning_output_tokens: 0,
+              total_tokens: 19998,
+            },
+          },
+        },
+      },
+    ]);
+
+    const entries = await readCodexEntries(WINDOW, projectDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.inputTokens).toBe(1234);
+    expect(entries[0]?.outputTokens).toBe(456);
+  });
+
+  it('includes sessions whose cwd is a subdirectory of projectDir', async () => {
+    const projectDir = join(tmpDir, 'my-project');
+    const subDir = join(projectDir, 'packages', 'cli');
+
+    await writeSession('subdir.jsonl', [
+      { type: 'session_meta', payload: { cwd: subDir } },
+      { timestamp: '2026-04-22T10:00:00Z', type: 'turn_context', payload: { model: 'gpt-5' } },
+      {
+        timestamp: '2026-04-22T10:01:00Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 777,
+              cached_input_tokens: 0,
+              output_tokens: 222,
+              reasoning_output_tokens: 0,
+              total_tokens: 999,
+            },
+          },
+        },
+      },
+    ]);
+
+    const entries = await readCodexEntries(WINDOW, projectDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.inputTokens).toBe(777);
+  });
+
+  it('skips sessions with missing or malformed session_meta when projectDir is set', async () => {
+    const projectDir = join(tmpDir, 'my-project');
+
+    // No session_meta — first line is just a turn_context
+    await writeSession('no-meta.jsonl', [
+      { timestamp: '2026-04-22T10:00:00Z', type: 'turn_context', payload: { model: 'gpt-5' } },
+      {
+        timestamp: '2026-04-22T10:01:00Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 500,
+              cached_input_tokens: 0,
+              output_tokens: 100,
+              reasoning_output_tokens: 0,
+              total_tokens: 600,
+            },
+          },
+        },
+      },
+    ]);
+
+    // Malformed first line
+    const sessionsDir = join(tmpDir, 'sessions');
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(
+      join(sessionsDir, 'malformed-meta.jsonl'),
+      [
+        'not-json',
+        JSON.stringify({
+          timestamp: '2026-04-22T10:01:00Z',
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: {
+                input_tokens: 333,
+                cached_input_tokens: 0,
+                output_tokens: 111,
+                reasoning_output_tokens: 0,
+                total_tokens: 444,
+              },
+            },
+          },
+        }),
+      ].join('\n')
+    );
+
+    const entries = await readCodexEntries(WINDOW, projectDir);
+    expect(entries).toHaveLength(0);
+  });
+
+  it('preserves "all sessions" behavior when projectDir is null/omitted', async () => {
+    await writeSession('any.jsonl', [
+      { type: 'session_meta', payload: { cwd: '/some/random/path' } },
+      { timestamp: '2026-04-22T10:00:00Z', type: 'turn_context', payload: { model: 'gpt-5' } },
+      {
+        timestamp: '2026-04-22T10:01:00Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 600,
+              cached_input_tokens: 0,
+              output_tokens: 200,
+              reasoning_output_tokens: 0,
+              total_tokens: 800,
+            },
+          },
+        },
+      },
+    ]);
+
+    // Omitted second arg
+    const omitted = await readCodexEntries(WINDOW);
+    expect(omitted).toHaveLength(1);
+
+    // Explicit null
+    const explicit = await readCodexEntries(WINDOW, null);
+    expect(explicit).toHaveLength(1);
+  });
 });

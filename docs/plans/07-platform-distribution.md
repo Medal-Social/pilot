@@ -383,7 +383,7 @@ jobs:
       - run: pnpm lint:packages
       - run: pnpm test -- --coverage
       - run: pnpm test:e2e
-      - run: pnpm secret:scan
+      - run: pnpm secret:lint
       - run: pnpm dead-code
 ```
 

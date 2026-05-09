@@ -47,6 +47,12 @@ const { KitErrorStub } = vi.hoisted(() => {
 
 vi.mock('@medalsocial/kit', () => ({
   KitError: KitErrorStub,
+  errorCodes: {
+    KIT_CONFIG_NOT_FOUND: 'KIT_CONFIG_NOT_FOUND',
+    KIT_CONFIG_INVALID: 'KIT_CONFIG_INVALID',
+    KIT_UNKNOWN_MACHINE: 'KIT_UNKNOWN_MACHINE',
+  },
+  configCandidates: vi.fn(() => ['/tmp/no.json']),
   loadKitConfig: vi.fn(),
   detectMachine: vi.fn(() => null),
   resolveProvider: vi.fn(() => ({ name: 'local' })),

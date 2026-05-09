@@ -25,8 +25,12 @@ export function computeCodexCost(
   const prices = CODEX_PRICES[model];
   if (!prices) return null;
   const M = 1_000_000;
+  // `inputTokens` from Codex's `total_token_usage` already INCLUDES
+  // `cachedInputTokens`. Charge the cached portion at the cached rate
+  // and the rest at the full input rate — never both.
+  const fullInputTokens = Math.max(inputTokens - cachedInputTokens, 0);
   return (
-    (inputTokens * prices.inputPerM) / M +
+    (fullInputTokens * prices.inputPerM) / M +
     (cachedInputTokens * prices.cachedInputPerM) / M +
     (outputTokens * prices.outputPerM) / M
   );

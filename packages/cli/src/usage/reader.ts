@@ -5,7 +5,7 @@ import type { Dirent } from 'node:fs';
 import { createReadStream, existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { createInterface } from 'node:readline';
 import { computeCodexCost } from './pricing.js';
 import type { UsageEntry, UsageWindow } from './types.js';
@@ -63,6 +63,25 @@ function isObj(v: unknown): v is Record<string, unknown> {
 
 function asNum(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+function findSessionMeta(lines: string[]): Record<string, unknown> | null {
+  const first = lines[0];
+  if (!first) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(first);
+  } catch {
+    return null;
+  }
+  if (!isObj(parsed)) return null;
+  if (parsed.type !== 'session_meta') return null;
+  return parsed;
+}
+
+function isWithin(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 export async function readClaudeEntries(
@@ -124,7 +143,10 @@ export async function readClaudeEntries(
   return entries;
 }
 
-export async function readCodexEntries(window: UsageWindow): Promise<UsageEntry[]> {
+export async function readCodexEntries(
+  window: UsageWindow,
+  projectDir: string | null = null
+): Promise<UsageEntry[]> {
   const codexHome = process.env.CODEX_HOME;
   const sessionsDir = codexHome
     ? join(codexHome, 'sessions')
@@ -135,6 +157,12 @@ export async function readCodexEntries(window: UsageWindow): Promise<UsageEntry[
 
   for (const file of files) {
     const lines = await readJsonlLines(file);
+    if (projectDir) {
+      const meta = findSessionMeta(lines);
+      const payload = isObj(meta?.payload) ? meta.payload : null;
+      const sessionCwd = payload && typeof payload.cwd === 'string' ? payload.cwd : null;
+      if (!sessionCwd || !isWithin(projectDir, sessionCwd)) continue;
+    }
     let currentModel = 'gpt-5';
     let prevInput = 0;
     let prevCachedInput = 0;

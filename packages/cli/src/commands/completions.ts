@@ -4,7 +4,7 @@
 import { errorCodes, PilotError } from '../errors.js';
 
 const BASH_COMPLETION = `_pilot_completions() {
-  local commands="admin completions crew down help kit plugins status training uninstall up update"
+  local commands="admin completions crew down help kit plugins status training uninstall up update usage"
   COMPREPLY=($(compgen -W "$commands" -- "\${COMP_WORDS[COMP_CWORD]}"))
 }
 complete -F _pilot_completions pilot
@@ -12,7 +12,7 @@ complete -F _pilot_completions pilot
 
 const ZSH_COMPLETION = `#compdef pilot
 _pilot() {
-  local commands=(admin completions crew down help kit plugins status training uninstall up update)
+  local commands=(admin completions crew down help kit plugins status training uninstall up update usage)
   _describe 'command' commands
 }
 compdef _pilot pilot
@@ -31,6 +31,7 @@ complete -c pilot -n '__fish_use_subcommand' -a training -d 'Knowledge base'
 complete -c pilot -n '__fish_use_subcommand' -a uninstall -d 'Uninstall Pilot'
 complete -c pilot -n '__fish_use_subcommand' -a up -d 'Setup templates'
 complete -c pilot -n '__fish_use_subcommand' -a update -d 'Check for updates'
+complete -c pilot -n '__fish_use_subcommand' -a usage -d 'AI token usage and costs'
 `;
 
 const SCRIPTS: Record<string, string> = {

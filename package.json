@@ -21,8 +21,8 @@
     "changeset:check": "node scripts/changeset-auto.mjs --check",
     "version": "changeset version",
     "release": "pnpm build && changeset publish",
-    "secret:scan": "node scripts/secretlint-repo.mjs",
-    "secret:scan:staged": "node scripts/secretlint-staged.mjs",
+    "secret:lint": "node scripts/secretlint-repo.mjs",
+    "secret:lint-staged": "node scripts/secretlint-staged.mjs",
     "knip:report": "knip --reporter json --no-exit-code",
     "knip:check": "knip",
     "prepare": "husky"

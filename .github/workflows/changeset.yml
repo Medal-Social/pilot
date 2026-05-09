@@ -175,10 +175,3 @@ jobs:
             gh pr comment "$PR_NUM" --body-file /tmp/changeset-bot-body.md
           fi
 
-  ai-fallback:
-    needs: classify-and-write
-    if: needs.classify-and-write.outputs.exit_code == '2'
-    uses: ./.github/workflows/changeset-ai-fallback.lock.yml
-    with:
-      pr: ${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
-    secrets: inherit

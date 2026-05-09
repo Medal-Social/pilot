@@ -197,6 +197,15 @@ describe('formatJson', () => {
     const parsed = JSON.parse(written);
     expect(parsed.providers.claude.totalCostUSD).toBeNull();
   });
+
+  it('nulls grandTotalCostUSD when any provider has unknown cost (no misleading partial sum)', () => {
+    const report = makeReport();
+    const provider = report.providers[0];
+    if (provider) provider.hasCostUnknown = true;
+    formatJson(report);
+    const parsed = JSON.parse(written);
+    expect(parsed.grandTotalCostUSD).toBeNull();
+  });
 });
 
 describe('formatTable with TTY colors enabled', () => {

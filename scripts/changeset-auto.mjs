@@ -590,6 +590,33 @@ function hasAnyChangesetInDiff(event, pr) {
     .some((f) => f.startsWith('.changeset/') && f.endsWith('.md') && f !== '.changeset/README.md');
 }
 
+/**
+ * Decide what `pnpm changeset:check` should exit with.
+ *
+ * Both `created` (the classifier wants to add a changeset) and `ambiguous`
+ * (it couldn't classify the change) require a changeset to merge — without
+ * this, an ambiguous PR touching `packages/cli/**` would silently exit 0
+ * and let release-affecting code through the gate.
+ *
+ * `skipped` and `user-skip` are explicit no-changeset paths and pass through.
+ *
+ * @param {{ action: 'created'|'skipped'|'ambiguous'|'user-skip' }} classification
+ * @param {boolean} hasChangeset
+ * @returns {{ exit: 0|1, message?: string }}
+ */
+export function decideCheckExit(classification, hasChangeset) {
+  if (classification.action === 'created' || classification.action === 'ambiguous') {
+    if (hasChangeset) return { exit: 0 };
+    return {
+      exit: 1,
+      message:
+        'A changeset is required for this PR but none was found. ' +
+        'Run `pnpm changeset` locally, or comment `/changeset` on the PR to auto-generate one.\n',
+    };
+  }
+  return { exit: 0 };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const checkMode = args.includes('--check');
@@ -625,17 +652,12 @@ async function main() {
   writeGithubOutput(result);
 
   if (checkMode) {
-    if (classification.action === 'created') {
-      if (hasAnyChangesetInDiff(readEventPayload(), inputs.pr)) {
-        process.exit(0);
-      }
-      process.stderr.write(
-        'A changeset is required for this PR but none was found. ' +
-          'Run `pnpm changeset` locally, or comment `/changeset` on the PR to auto-generate one.\n'
-      );
-      process.exit(1);
-    }
-    process.exit(0);
+    const decision = decideCheckExit(
+      classification,
+      hasAnyChangesetInDiff(readEventPayload(), inputs.pr)
+    );
+    if (decision.message) process.stderr.write(decision.message);
+    process.exit(decision.exit);
   }
 
   if (classification.action === 'created') {

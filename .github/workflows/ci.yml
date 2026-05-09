@@ -61,7 +61,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm secret:scan
+      - run: pnpm secret:lint
 
       - run: pnpm knip:check
 
