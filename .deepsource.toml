@@ -1,0 +1,36 @@
+version = 1
+
+# Real secret detection runs locally via secretlint (`pnpm secret:scan` and the
+# pre-commit hook `pnpm secret:scan:staged`) plus the `secret:scan` job in
+# .github/workflows/ci.yml. DeepSource's Secrets analyzer is kept enabled as a
+# second pair of eyes, but with two paths excluded for false-positive churn:
+#
+#  - `package.json`             — the npm script names `secret:scan` and
+#                                 `secret:scan:staged` trip the SCT-A000
+#                                 "hardcoded credential" regex on the
+#                                 `:scan:staged":` substring.
+#  - `docs/superpowers/**`      — design specs and plans contain example code
+#                                 blocks (e.g. `MEDAL_API_KEY=test_mock`,
+#                                 reproduced package.json snippets) that match
+#                                 the same patterns.
+#
+# Real source code under `packages/`, `apps/`, `scripts/`, and `workers/` is
+# still scanned.
+
+exclude_patterns = [
+  "package.json",
+  "docs/superpowers/**",
+]
+
+[[analyzers]]
+name = "secrets"
+
+[[analyzers]]
+name = "javascript"
+
+  [analyzers.meta]
+  plugins = ["react"]
+  environment = ["nodejs"]
+
+[[analyzers]]
+name = "test-coverage"
