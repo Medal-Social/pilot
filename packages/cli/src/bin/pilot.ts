@@ -191,6 +191,56 @@ if (kitEnabled) {
     });
 }
 
+const dispatchEnabled = settings.plugins['@medalsocial/dispatch']?.enabled === true;
+
+if (dispatchEnabled) {
+  const dispatch = program.command('dispatch').description('Medal Dispatch — fleet manager');
+
+  dispatch
+    .command('status')
+    .description('Plugin health check')
+    .action(async () => {
+      const { runDispatchStatus } = await import('../commands/dispatch.js');
+      await runDispatchStatus();
+    });
+
+  dispatch
+    .command('up')
+    .description('Start the dispatch hub under Pilot')
+    .action(async () => {
+      const { runDispatchUp } = await import('../commands/dispatch.js');
+      await runDispatchUp();
+    });
+
+  dispatch
+    .command('down')
+    .description('Stop the dispatch hub')
+    .action(async () => {
+      const { runDispatchDown } = await import('../commands/dispatch.js');
+      await runDispatchDown();
+    });
+
+  dispatch
+    .command('worker <action>')
+    .description('Worker subcommands (register, start)')
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .action(async (action: string, _opts: unknown, cmd: { args: string[] }) => {
+      const { runDispatchPassthrough } = await import('../commands/dispatch.js');
+      await runDispatchPassthrough(['worker', action, ...cmd.args.slice(1)]);
+    });
+
+  dispatch
+    .command('source <action>')
+    .description('Source subcommands (add, list)')
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .action(async (action: string, _opts: unknown, cmd: { args: string[] }) => {
+      const { runDispatchPassthrough } = await import('../commands/dispatch.js');
+      await runDispatchPassthrough(['source', action, ...cmd.args.slice(1)]);
+    });
+}
+
 program.action(async () => {
   const { runRepl } = await import('../commands/repl.js');
   await runRepl();

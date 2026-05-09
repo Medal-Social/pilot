@@ -47,4 +47,28 @@ export const bundledPlugins: LoadedPlugin[] = [
     enabled: true,
     path: 'bundled',
   },
+  {
+    manifest: {
+      name: 'dispatch',
+      namespace: 'medalsocial',
+      description:
+        'Fleet manager for AI coding agents — hub + worker daemons, real-time dashboard, drag-to-assign Kanban.',
+      provides: {
+        commands: [
+          'dispatch up',
+          'dispatch down',
+          'dispatch worker register',
+          'dispatch worker start',
+          'dispatch source add',
+        ],
+        mcpServers: ['dispatch'],
+      },
+      permissions: { network: ['api.linear.app', 'api.github.com'] },
+      roleBindings: {},
+    },
+    id: '@medalsocial/dispatch',
+    // Default off — opt-in until Plan 7 ships across both repos.
+    enabled: false,
+    path: 'bundled',
+  },
 ];
