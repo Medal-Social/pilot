@@ -224,6 +224,7 @@ if (dispatchEnabled) {
     .command('worker <action>')
     .description('Worker subcommands (register, start)')
     .allowUnknownOption()
+    .allowExcessArguments()
     .action(async (action: string, _opts: unknown, cmd: { args: string[] }) => {
       const { runDispatchPassthrough } = await import('../commands/dispatch.js');
       await runDispatchPassthrough(['worker', action, ...cmd.args.slice(1)]);
@@ -233,6 +234,7 @@ if (dispatchEnabled) {
     .command('source <action>')
     .description('Source subcommands (add, list)')
     .allowUnknownOption()
+    .allowExcessArguments()
     .action(async (action: string, _opts: unknown, cmd: { args: string[] }) => {
       const { runDispatchPassthrough } = await import('../commands/dispatch.js');
       await runDispatchPassthrough(['source', action, ...cmd.args.slice(1)]);

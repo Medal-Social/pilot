@@ -1,40 +1,40 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { errorCodes, PilotError } from '../errors.js';
 import { createDispatchHost } from '../plugins/dispatch-host.js';
 import type { DispatchPluginLike } from '../plugins/dispatch-loader.js';
 import { loadDispatchPlugin } from '../plugins/dispatch-loader.js';
+import { runInherit } from '../shell/exec.js';
 
-const PLUGIN_ID = '@medalsocial/dispatch';
+const DISPATCH_PASSTHROUGH_ENV = { DISPATCH_PILOT_HOST: '1' } as const;
+const DISPATCH_NPX_ARGS = ['-y', '@medalsocial/dispatch'] as const;
 
 function unavailable(): never {
-  console.error(
-    `${PLUGIN_ID} is not installed. Run \`npm i -g ${PLUGIN_ID}\` then re-run this command.`
-  );
-  process.exit(1);
+  throw new PilotError(errorCodes.DISPATCH_UNAVAILABLE);
 }
 
 async function withPlugin<T>(fn: (plugin: DispatchPluginLike) => Promise<T>): Promise<T> {
-  // Pilot's dispatch host stub for plan 7 — cloud.send logs only.
+  // Pilot's dispatch host stub: log/email forwarders go to stdout/stderr until
+  // the daemon supervisor wires this up to the production hub.
   const host = createDispatchHost({
     log: {
-      info: (m, meta) => console.log(`[pilot:info] ${m}`, meta ?? ''),
-      warn: (m, meta) => console.warn(`[pilot:warn] ${m}`, meta ?? ''),
-      error: (m, meta) => console.error(`[pilot:error] ${m}`, meta ?? ''),
+      info: (m, meta) =>
+        process.stdout.write(`[pilot:info] ${m}${meta ? ` ${JSON.stringify(meta)}` : ''}\n`),
+      warn: (m, meta) =>
+        process.stderr.write(`[pilot:warn] ${m}${meta ? ` ${JSON.stringify(meta)}` : ''}\n`),
+      error: (m, meta) =>
+        process.stderr.write(`[pilot:error] ${m}${meta ? ` ${JSON.stringify(meta)}` : ''}\n`),
       debug: () => {},
     },
     secretsStore: {},
     medalSocial: null,
     sendEmail: async (msg) => {
-      console.log(
-        `[pilot:email] -> ${Array.isArray(msg.to) ? msg.to.join(', ') : msg.to} :: ${msg.subject}`
-      );
+      const to = Array.isArray(msg.to) ? msg.to.join(', ') : msg.to;
+      process.stdout.write(`[pilot:email] -> ${to} :: ${msg.subject}\n`);
       return { id: `pilot-${Date.now()}` };
     },
   });
-  // Open the dispatch hub DB read-only-ish — plan 7 just calls health().
-  // Real syncStream/applyRemote wiring runs only when `pilot up dispatch`
-  // keeps the daemon alive (next plan).
   const plugin = await loadDispatchPlugin({
     opts: { db: null, feed: null, deviceId: 'pilot-cli', host },
   });
@@ -45,31 +45,29 @@ async function withPlugin<T>(fn: (plugin: DispatchPluginLike) => Promise<T>): Pr
 export async function runDispatchStatus(): Promise<void> {
   await withPlugin(async (plugin) => {
     const h = await plugin.health();
-    console.log(JSON.stringify(h, null, 2));
+    process.stdout.write(`${JSON.stringify(h, null, 2)}\n`);
   });
 }
 
 export async function runDispatchUp(): Promise<void> {
-  // Plan 7: spawn `dispatch hub start` under Pilot — child process.
-  const { spawn } = await import('node:child_process');
-  const child = spawn('npx', ['-y', '@medalsocial/dispatch', 'hub', 'start'], {
-    stdio: 'inherit',
-    env: { ...process.env, DISPATCH_PILOT_HOST: '1' },
+  // Spawns the dispatch hub under Pilot's supervision via the centralized
+  // shell/exec runInherit helper (the only sanctioned subprocess entry point).
+  const code = await runInherit('npx', [...DISPATCH_NPX_ARGS, 'hub', 'start'], {
+    env: { ...process.env, ...DISPATCH_PASSTHROUGH_ENV },
   });
-  child.on('exit', (code) => process.exit(code ?? 0));
+  process.exitCode = code;
 }
 
 export async function runDispatchDown(): Promise<void> {
-  // Stub for plan 7 — sends SIGTERM to a tracked PID file; real lifecycle is the next plan.
-  console.log('pilot down dispatch — TODO: requires plan 8 daemon supervisor');
+  // Real lifecycle ships with the daemon supervisor (tracked separately).
+  // For now, surface a clear PilotError so the user knows the action isn't a no-op.
+  throw new PilotError(errorCodes.DISPATCH_NOT_READY, 'pilot down dispatch');
 }
 
 export async function runDispatchPassthrough(args: string[]): Promise<void> {
   // `pilot dispatch source add ...` → npx @medalsocial/dispatch source add ...
-  const { spawn } = await import('node:child_process');
-  const child = spawn('npx', ['-y', '@medalsocial/dispatch', ...args], {
-    stdio: 'inherit',
-    env: { ...process.env, DISPATCH_PILOT_HOST: '1' },
+  const code = await runInherit('npx', [...DISPATCH_NPX_ARGS, ...args], {
+    env: { ...process.env, ...DISPATCH_PASSTHROUGH_ENV },
   });
-  child.on('exit', (code) => process.exit(code ?? 0));
+  process.exitCode = code;
 }
