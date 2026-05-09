@@ -183,6 +183,33 @@ describe('runKitInit', () => {
     vi.mocked(runInit).mockResolvedValue(undefined);
   });
 
+  // Regression: pilot kit init must exit non-zero when refusing on
+  // gitStrategy=none (KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY) so shell wrappers
+  // can detect the refusal via exit code instead of grepping stderr.
+  it('exits with code 1 on KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY', async () => {
+    const refusal = new KitErrorStub(
+      '`pilot kit init` is not supported when gitStrategy=none. The kit lives inside a host repository — clone the host repo manually, then run `pilot kit update`.'
+    );
+    // Tag the stub so production-side `instanceof KitError` could re-discriminate
+    // if needed; the dispatcher's fail() reads .message + .cause regardless.
+    (refusal as unknown as { code: string }).code = 'KIT_INIT_NOT_SUPPORTED_FOR_STRATEGY';
+    vi.mocked(runInit).mockRejectedValue(refusal);
+    const exitCodes: Array<number | undefined> = [];
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      exitCodes.push(code);
+      throw new Error('exit');
+    }) as never);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(runKitInit('ali-pro')).rejects.toThrow('exit');
+    expect(exitCodes).toEqual([1]);
+    expect(err).toHaveBeenCalledWith(
+      expect.stringContaining('not supported when gitStrategy=none')
+    );
+    exit.mockRestore();
+    err.mockRestore();
+    vi.mocked(runInit).mockResolvedValue(undefined);
+  });
+
   it('includes cause in KitError message when cause is present', async () => {
     vi.mocked(runInit).mockRejectedValue(
       new KitErrorStub('boom', { cause: new Error('root cause') })

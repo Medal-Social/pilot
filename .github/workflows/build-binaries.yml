@@ -131,6 +131,10 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24'
+
       - name: Download binaries and compute SHA256s
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_SYNC_TOKEN }}
@@ -151,12 +155,17 @@ jobs:
             echo "SHA_${key}=${sha}" >> "$GITHUB_ENV"
           done
 
-      - name: Update formula with real SHA256s
+      - name: Stamp formula with version, tag-pinned URLs, and real SHA256s
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          FORMULA_PATH: homebrew-pilot/pilot.rb
         run: |
-          sed -i "s|sha256 \".*\" # darwin-arm64|sha256 \"${SHA_pilot_darwin_arm64}\" # darwin-arm64|" homebrew-pilot/pilot.rb
-          sed -i "s|sha256 \".*\" # darwin-x64|sha256 \"${SHA_pilot_darwin_x64}\" # darwin-x64|" homebrew-pilot/pilot.rb
-          sed -i "s|sha256 \".*\" # linux-arm64|sha256 \"${SHA_pilot_linux_arm64}\" # linux-arm64|" homebrew-pilot/pilot.rb
-          sed -i "s|sha256 \".*\" # linux-x64|sha256 \"${SHA_pilot_linux_x64}\" # linux-x64|" homebrew-pilot/pilot.rb
+          # The checked-in pilot.rb is intentionally version-less and uses
+          # `releases/latest/download/...` so the source is generic. The release
+          # workflow stamps in the concrete version + tag-pinned URLs + real
+          # SHA256s here. Without the `version` field, `brew upgrade pilot`
+          # is a no-op even after a new tap PR lands.
+          node scripts/update-tap-formula.mjs
 
       - name: Sync to homebrew-pilot repo via PR
         env:
