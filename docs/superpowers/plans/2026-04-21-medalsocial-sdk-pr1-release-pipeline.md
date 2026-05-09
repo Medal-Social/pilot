@@ -99,8 +99,8 @@ Replace the relevant sections so `package.json` becomes:
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish && npx jsr publish",
-    "secret:scan": "node scripts/secretlint-repo.mjs",
-    "secret:scan-staged": "node scripts/secretlint-staged.mjs",
+    "secret:lint": "node scripts/secretlint-repo.mjs",
+    "secret:lint-staged": "node scripts/secretlint-staged.mjs",
     "knip:report": "knip --reporter json --no-exit-code",
     "knip:check": "knip"
   },
@@ -350,7 +350,7 @@ If it already exists, append `node scripts/secretlint-staged.mjs` to it.
 
 ```bash
 cd <sdk-repo-root>
-pnpm secret:scan
+pnpm secret:lint
 ```
 
 Expected: exits 0, no secrets found.
@@ -434,7 +434,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm secret:scan
+      - run: pnpm secret:lint
 
       - run: pnpm knip:check
 ```
@@ -739,7 +739,7 @@ Expected: lint passes, all tests pass.
 
 ```bash
 cd <sdk-repo-root>
-pnpm secret:scan
+pnpm secret:lint
 ```
 
 Expected: exits 0, no secrets found.

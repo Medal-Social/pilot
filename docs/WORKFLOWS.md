@@ -34,7 +34,7 @@ Pilot uses two workflow families:
 - **Jobs**:
   - `test`: installs dependencies, runs `pnpm quality`, then runs coverage-enabled tests and uploads coverage to Codecov
   - `lint`: runs `pnpm lint`
-  - `security`: runs `pnpm secret:scan` and `pnpm knip:check`
+  - `security`: runs `pnpm secret:lint` and `pnpm knip:check`
   - `shellcheck`: validates `scripts/install.sh`
 
 ### Release

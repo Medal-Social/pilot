@@ -18,7 +18,7 @@ pnpm test         # Run tests
 pnpm test:repo    # Verify repo guardrails (hooks, workflows, metadata)
 pnpm lint         # Check code style
 pnpm lint:fix     # Auto-fix code style
-pnpm secret:scan  # Scan the repo for committed secrets
+pnpm secret:lint  # Scan the repo for committed secrets
 pnpm knip:check   # Detect unused files, exports, and dependencies
 ```
 
