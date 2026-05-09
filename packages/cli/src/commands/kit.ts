@@ -310,8 +310,11 @@ export async function runKitStatus(opts: RunKitStatusOpts = {}): Promise<void> {
         message: 'No kit.config.json found.',
         searched: configCandidates(),
       };
+      // Use exitCode (not exit()) so stdout flushes the envelope cleanly when
+      // output is piped — `process.exit()` does not wait for drain.
       process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     fail(e);
   }

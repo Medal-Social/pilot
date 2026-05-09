@@ -173,6 +173,119 @@ The repo keeps detailed plans and specs under `docs/plans/` and `docs/specs/`. T
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [SECURITY.md](SECURITY.md)
 
+---
+
+## Feature Tracker
+
+Status: **Pre-release** · Building v1
+
+### Core Platform
+| Feature | Status | Spec |
+|---------|--------|------|
+| Monorepo + toolchain (Turbo, Biome, Husky) | Done | [Plan](docs/plans/masterplan.md) |
+| React Ink component library | Done | [Plan](docs/plans/masterplan.md) |
+| Commander.js CLI routing | Done | [Plan](docs/plans/masterplan.md) |
+| Design token system (from Pencil) | Done | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Structured logging + error system | Planned | [Plan](docs/plans/masterplan.md) |
+| ErrorBoundary + crash recovery | Planned | [Plan](docs/plans/masterplan.md) |
+
+### Onboarding & Setup
+| Feature | Status | Spec |
+|---------|--------|------|
+| curl installer (single command) | Planned | [Plan](docs/plans/masterplan.md) |
+| Welcome screen + crew introduction | Done | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Home screen (instruments dashboard) | Done | [Plan](docs/plans/02-screens.md) |
+| REPL routing (Welcome → Home) | Done | [Plan](docs/plans/02-screens.md) |
+| Machine detection + auto-config | Done | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Update flow (check, progress, what's new) | Done | [Plan](docs/plans/02-screens.md) |
+| XDG Base Directory compliance | Planned | [Plan](docs/plans/masterplan.md) |
+
+### AI & Crew
+| Feature | Status | Spec |
+|---------|--------|------|
+| Vercel AI SDK integration (Claude) | Planned | [Plan](docs/plans/masterplan.md) |
+| 5 crew leads (Brand, Marketing, Tech, CS, Sales) | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Auto-routing (natural language to right crew lead) | Planned | [Plan](docs/plans/masterplan.md) |
+| AI retry + timeout + offline resilience | Planned | [Plan](docs/plans/masterplan.md) |
+| AGENTS.md / CLAUDE.md generation | Planned | [Plan](docs/plans/masterplan.md) |
+
+### Skill Deployment
+| Feature | Status | Spec |
+|---------|--------|------|
+| ~/.pilot/skills/ structure | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Symlink to ~/.claude/skills/pilot | Planned | [Plan](docs/plans/masterplan.md) |
+| CLAUDE.md routing injection | Planned | [Plan](docs/plans/masterplan.md) |
+| Smart updates (manifest checksums) | Planned | [Plan](docs/plans/masterplan.md) |
+| Tech Lead dev guide + AI best practices | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+
+### Plugin System
+| Feature | Status | Spec |
+|---------|--------|------|
+| Plugin manifest (plugin.toml + Zod) | Done | [Plan](docs/plans/masterplan.md) |
+| Plugin registry (load, enable, disable, remove) | Done | [Plan](docs/plans/masterplan.md) |
+| Plugins screen (split panel browse + manage) | Done | [Plan](docs/plans/02-screens.md) |
+| Plugin sandboxing (permission enforcement) | Planned | [Plan](docs/plans/masterplan.md) |
+| Contribution guidelines | Planned | [Plan](docs/plans/masterplan.md) |
+
+### Training & Knowledge
+| Feature | Status | Spec |
+|---------|--------|------|
+| Training screen (split panel sources) | Done | [Plan](docs/plans/02-screens.md) |
+| Knowledge base (sources, articles, runs) | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Bi-directional source sync | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Config migration system | Planned | [Plan](docs/plans/masterplan.md) |
+
+### Admin
+| Feature | Status | Spec | Description |
+|---------|--------|------|-------------|
+| Admin Dashboard | In Progress | [Spec](docs/superpowers/specs/2026-04-19-admin-dashboard-design.md) | CLI command center with health strip, tabbed panels, SDK-powered data |
+
+### Machine Management (Kit)
+| Feature | Status | Spec |
+|---------|--------|------|
+| `pilot kit init` — bootstrap a fresh machine | Done | [Spec](docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md) |
+| `pilot kit status` — health checks (TTY + JSON) | Done | [Spec](docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md) |
+| `pilot kit update` — pull + rebuild with progress UI | Done | [Spec](docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md) |
+| `pilot kit clean` — scan and remove junk/dev caches | Done | [Spec](docs/superpowers/specs/2026-04-22-kit-clean-design.md) |
+| Kit readiness — `KIT_CONFIG`, completions guardrail, JSON error envelope | Done | Spec — Vault `vault/open-source/pilot/specs/2026-05-09-pilot-kit-readiness-design.md` |
+
+### pilot up (One-Click Setup)
+| Feature | Status | Spec |
+|---------|--------|------|
+| Hosted registry (fetch, cache, SHA verify, offline fallback) | Done | [Spec](docs/superpowers/specs/2026-04-21-pilot-up-registry-design.md) |
+| Template manifest format (pkg/npm/mcp/skill steps, cross-platform) | Done | [Spec](docs/superpowers/specs/2026-04-21-pilot-up-registry-design.md) |
+| `pilot up <template>` install flow with progress UI | Done | [Spec](docs/superpowers/specs/2026-04-21-pilot-up-registry-design.md) |
+| `pilot up` browse UI (split-panel, categories) | Done | [Spec](docs/superpowers/specs/2026-04-21-pilot-up-registry-design.md) |
+| `pilot down <template>` step-based uninstall | Done | [Spec](docs/superpowers/specs/2026-04-21-pilot-up-registry-design.md) |
+| Specialist crew wiring on install | Done | [Spec](docs/superpowers/specs/2026-04-21-pilot-up-registry-design.md) |
+
+### Observability
+| Feature | Status | Spec |
+|---------|--------|------|
+| `pilot usage` — Claude Code + Codex token/cost report | Done | [Spec](docs/superpowers/specs/2026-04-22-pilot-usage-design.md) |
+
+### MedalSocial SDK Integration
+| Feature | Status | Spec |
+|---------|--------|------|
+| SDK mainstreaming design | Planned | [Spec](docs/superpowers/specs/2026-04-21-medalsocial-sdk-mainstreaming-design.md) |
+| PR1: Release pipeline | Planned | [Plan](docs/superpowers/plans/2026-04-21-medalsocial-sdk-pr1-release-pipeline.md) |
+| PR2: Pilot integration | Planned | [Plan](docs/superpowers/plans/2026-04-21-medalsocial-sdk-pr2-pilot-integration.md) |
+
+### Distribution & Quality
+| Feature | Status | Spec |
+|---------|--------|------|
+| tsup dual CJS/ESM build | Planned | [Plan](docs/plans/masterplan.md) |
+| Single binary via ncc | Planned | [Plan](docs/plans/masterplan.md) |
+| Changesets versioning + automation classifier | Done | [Plan](docs/plans/masterplan.md) |
+| GitHub Actions CI + release | Done | [Plan](docs/plans/masterplan.md) |
+| E2E test suite | Planned | [Plan](docs/plans/masterplan.md) |
+| Shell completions (bash, zsh, fish) + parity guardrail | Done | Spec — Vault `vault/open-source/pilot/specs/2026-05-09-pilot-kit-readiness-design.md` |
+| NO_COLOR / FORCE_COLOR support | Done | [Plan](docs/plans/masterplan.md) |
+| Local-only telemetry | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+| Themes (dark/light from design tokens) | Planned | [Spec](docs/specs/2026-04-09-pilot-cli-v2-design.md) |
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor workflow, testing rules, and review policy.

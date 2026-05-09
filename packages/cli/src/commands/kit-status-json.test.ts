@@ -55,10 +55,15 @@ describe('runKitStatus --json on missing config', () => {
     else process.env.KIT_CONFIG = origKitConfig;
   });
 
-  it('emits structured JSON to stdout, nothing to stderr, exits 1', async () => {
-    await expect(runKitStatus({ json: true })).rejects.toThrow(/__exit_1__/);
+  it('emits structured JSON to stdout, nothing to stderr, sets exitCode 1', async () => {
+    // Returns normally (no throw) so stdout has time to flush before exit.
+    // The earlier process.exit(1) caused piped consumers to see truncated JSON.
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
 
-    expect(exitCode).toBe(1);
+    await expect(runKitStatus({ json: true })).resolves.toBeUndefined();
+
+    expect(process.exitCode).toBe(1);
     expect(stderr).toBe('');
     const parsed = JSON.parse(stdout);
     expect(parsed).toMatchObject({
@@ -68,6 +73,8 @@ describe('runKitStatus --json on missing config', () => {
     expect(typeof parsed.message).toBe('string');
     expect(Array.isArray(parsed.searched)).toBe(true);
     expect(parsed.searched.length).toBeGreaterThan(0);
+
+    process.exitCode = prevExitCode;
   });
 
   it('TTY path (no --json) still writes to stderr and exits 1', async () => {
