@@ -8,6 +8,32 @@ Use it to answer three questions quickly:
 2. Which files are the source of truth?
 3. Which automations are deterministic versus agentic?
 
+## Branch Model
+
+- **`dev`** — integration branch where feature PRs land. Every merge into `dev`
+  runs the full `pnpm quality:100` Pilot 100 quality gate (lint, typecheck,
+  repo + workspace coverage, Knip, secret scan, and the `pilot-100` enforcer).
+- **`prod`** — release branch. Pushes here trigger `release.yml` which runs
+  `pnpm quality:100` again before publishing via Changesets.
+- **`prod` → `dev`** back-merge automation keeps `dev` in sync after each
+  release. **`dev` → `prod`** promotion runs on a schedule (or manually via
+  `promote.yml`) once changesets are accumulated.
+
+## Pilot 100 Quality Gate
+
+`pnpm quality:100` is the single composite gate every CI lane runs. Defined
+in the root `package.json`, it sequences:
+
+1. `pnpm quality` — lint + typecheck + repo tests + workspace tests
+2. `pnpm test:repo:coverage` — repo tests with coverage enforcement
+3. `pnpm quality:worker` — workers/pilot-landing tests (when present)
+4. `pnpm test -- --run --coverage` — workspace tests with coverage enforcement
+5. `pnpm knip:check` — dead-code / unused-export check
+6. `pnpm secret:scan` — secretlint over the full tree
+7. `pnpm pilot-100` — repo-structure invariants enforced by `scripts/pilot-100.mjs`
+
+A failure at any step blocks both `dev` and `prod` merges.
+
 For current run health, use the GitHub Actions UI. This document explains the intended behavior and ownership of each workflow, not the live status of the last run.
 
 ## Workflow Families
