@@ -134,6 +134,16 @@ export async function scanTargets(
       if (target.kind === 'brew') {
         const cachePath = await resolveBrewCache(exec);
         if (!cachePath) return null;
+        // Skip if the brew cache lives under another scanned `path` target
+        // (e.g. ~/Library/Caches/Homebrew is a child of `system-caches`).
+        // Without this, the same files get scanned and deleted twice.
+        const swallowed = targets.some(
+          (other) =>
+            other.kind === 'path' &&
+            other.path &&
+            (cachePath === other.path || cachePath.startsWith(`${other.path}/`))
+        );
+        if (swallowed) return null;
         const bytes = await scanPath(exec, cachePath);
         return bytes > 0 ? { target: { ...target, path: cachePath }, bytes } : null;
       }

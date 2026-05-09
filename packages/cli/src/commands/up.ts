@@ -67,7 +67,15 @@ export async function runUp(template?: string): Promise<void> {
     );
     await waitUntilExit();
     if (selected !== null) {
-      await runUp(selected);
+      try {
+        await runUp(selected);
+      } catch (err) {
+        // Surface install failures the same way the previous fire-and-forget
+        // onInstall path did — without this the rejection escapes to the
+        // top-level parseAsync() handler with no PilotError formatter.
+        process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+        process.exitCode = 1;
+      }
     }
     return;
   }

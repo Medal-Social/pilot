@@ -283,7 +283,7 @@ describe('runUp', () => {
     expect(render).toHaveBeenCalledTimes(2);
   });
 
-  it('propagates the nested runUp rejection from onInstall after the browse UI exits', async () => {
+  it('catches and surfaces the nested runUp rejection without throwing', async () => {
     const { fetchRegistry } = await import('../registry/fetch.js');
     (fetchRegistry as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       index: { version: 1, publishedAt: '', sha256: 'x', templates: [] },
@@ -311,14 +311,28 @@ describe('runUp', () => {
       }
     );
 
+    const stderr: string[] = [];
+    const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      stderr.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk as Uint8Array).toString());
+      return true;
+    });
+    const prevExitCode = process.exitCode;
+    process.exitCode = 0;
+
     const { runUp } = await import('./up.js');
     const promise = runUp(); // browse mode
     await new Promise((r) => setTimeout(r, 0));
 
     // Template name not in the registry → nested runUp rejects with UP_TEMPLATE_NOT_FOUND.
+    // The wrapper catches it, writes to stderr, and sets process.exitCode = 1.
     capturedOnInstall?.({ name: 'unknown-template' });
 
-    await expect(promise).rejects.toMatchObject({ code: 'UP_TEMPLATE_NOT_FOUND' });
+    await expect(promise).resolves.toBeUndefined();
+    expect(stderr.join('')).toContain('Template not found');
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = prevExitCode;
+    writeSpy.mockRestore();
   });
 
   it('records each step label in the installed-template state', async () => {

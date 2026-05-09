@@ -199,8 +199,10 @@ export function Uninstall() {
                 // else: template remains tracked so the user can retry cleanup.
               }
             } catch {
-              // best-effort if registry unavailable
-              for (const t of templates) removeTemplateFromState(t);
+              // Registry unavailable (network down, UP_REGISTRY_TAMPERED, etc.).
+              // Do NOT clear state — the dev tools are still installed on the
+              // machine, and removing the tracking now would leave the user
+              // with no way to retry via `pilot down <template>`.
             }
             addStep('Dev tools removed', false);
             setBusy(false);

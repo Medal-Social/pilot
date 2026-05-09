@@ -430,7 +430,11 @@ describe('Uninstall', () => {
     expect(vi.mocked(state.removeTemplateFromState)).toHaveBeenCalledWith('pencil');
   });
 
-  it('falls back to bulk state removal when fetchRegistry throws during step4', async () => {
+  it('keeps template state when fetchRegistry throws during step4 (no bulk removal)', async () => {
+    // Regression: previously the broad catch on fetchRegistry failure ran
+    // a bulk `removeTemplateFromState` for every installed template. That
+    // left dev tools installed but cleared the tracking, so the user had
+    // no way to retry via `pilot down <template>`. State must persist.
     const state = await import('../device/state.js');
     const runner = await import('../installer/runner.js');
     const fetchMod = await import('../registry/fetch.js');
@@ -457,7 +461,7 @@ describe('Uninstall', () => {
     await delay();
 
     expect(runner.runUninstallSteps).not.toHaveBeenCalled();
-    expect(vi.mocked(state.removeTemplateFromState)).toHaveBeenCalledWith('ghost');
+    expect(vi.mocked(state.removeTemplateFromState)).not.toHaveBeenCalledWith('ghost');
   });
 
   it('keeps template state when runUninstallSteps rejects so the user can retry', async () => {
