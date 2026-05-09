@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from 'vitest';
+import type { Exec } from '../shell/exec.js';
 import { detectPackageManagers } from './detect.js';
-import type { Exec } from './exec.js';
 
 function makeExec(available: string[]): Exec {
   return {

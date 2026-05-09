@@ -54,7 +54,7 @@ admin imports on pre-existing files) are tolerated; errors block. Don't use
 - Co-located tests: `Step.tsx` → `Step.test.tsx`
 - ink-testing-library for component tests
 - E2E tests in `tests/e2e/` with isolated `PILOT_HOME`
-- Coverage target: 100% (hard minimums: 95% statements, 90% branches, 100% functions)
+- Coverage target: 100% while the project is small; `pnpm quality:100` runs repo guardrail coverage, worker validation, and package coverage (hard minimums: 97% statements/functions/lines; branches 95% CLI, 90% kit)
 
 ## Changeset Automation
 
@@ -128,7 +128,7 @@ Errors use `KitError(errorCodes.KIT_*, detail?)` — per-plugin pattern, not wra
 
 `Exec` interface (in `shell/exec.ts`) is the only place that touches `child_process`. Pass `interactive: true` for commands that need a real TTY (editors, prompts) — otherwise stdin/stdout/stderr are piped and captured.
 
-Spec: `docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md`
+Design history for this work is kept outside the source repo with the rest of the Pilot spec archive.
 
 ## User-Facing Language
 
@@ -139,12 +139,7 @@ Spec: `docs/superpowers/specs/2026-04-20-kit-machine-package-v1-design.md`
 
 ## Feature Tracker
 
-When a new spec or plan is created, update the Feature Tracker table in README.md:
-- Add new features with status (Planned / In Progress / Done)
-- Link to the relevant spec or plan document
-- Update status as features are implemented and merged
-
-The tracker is the single source of truth for what Pilot can do and what's coming next.
+When a new spec or plan is created, store it in the external spec-driven-development archive for Pilot. Keep README focused on current shipped behavior and operational entry points.
 
 ## Skill Routing
 

@@ -22,6 +22,10 @@ describe('nixStep', () => {
     expect(await nixStep.check({ exec })).toBe(false);
   });
 
+  it('check false without a step context', async () => {
+    expect(await nixStep.check()).toBe(false);
+  });
+
   it('run pipes the determinate installer through sh', async () => {
     const exec = {
       run: vi
@@ -47,5 +51,17 @@ describe('nixStep', () => {
       spawn: vi.fn(),
     };
     await expect(nixStep.run({ exec })).rejects.toBeInstanceOf(KitError);
+  });
+
+  it('run throws on download failure', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValueOnce({ stdout: '', stderr: 'curl failed', code: 1 }),
+      spawn: vi.fn(),
+    };
+
+    await expect(nixStep.run({ exec })).rejects.toMatchObject({
+      code: 'KIT_NIX_INSTALL_FAILED',
+      cause: 'curl failed',
+    });
   });
 });

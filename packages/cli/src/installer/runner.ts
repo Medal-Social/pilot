@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { loadTemplateState } from '../device/state.js';
 import { fetchRegistry } from '../registry/fetch.js';
 import type { AnyStep, NpmStep, PkgStep, TemplateEntry } from '../registry/types.js';
+import { realExec } from '../shell/exec.js';
 import type { PackageManagers } from './detect.js';
-import { realExec } from './exec.js';
 import { checkStep, executeStep, unexecuteStep } from './steps.js';
 
 export interface RunCallbacks {

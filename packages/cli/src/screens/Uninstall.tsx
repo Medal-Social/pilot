@@ -13,9 +13,9 @@ import { removeRoutingFromClaudeMd, removeSkillSymlink } from '../deploy/deploye
 import { backupKnowledge } from '../device/backup.js';
 import { getInstalledTemplateNames, removeTemplateFromState } from '../device/state.js';
 import { detectPackageManagers } from '../installer/detect.js';
-import { realExec } from '../installer/exec.js';
 import { runUninstallSteps } from '../installer/runner.js';
 import { fetchRegistry } from '../registry/fetch.js';
+import { realExec } from '../shell/exec.js';
 
 type Phase =
   | 'intro'

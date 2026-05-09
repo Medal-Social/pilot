@@ -50,6 +50,30 @@ describe('scaffoldKit', () => {
     expect(gitInit).toBeDefined();
   });
 
+  it('scaffolds nixos machines when requested', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const target = join(dir, 'linux-kit');
+
+    await scaffoldKit({
+      target,
+      name: 'linux-kit',
+      machine: 'nixos-box',
+      user: 'ali',
+      type: 'nixos',
+      exec,
+    });
+
+    const flake = readFileSync(join(target, 'flake.nix'), 'utf8');
+    const machine = readFileSync(join(target, 'machines', 'nixos-box.nix'), 'utf8');
+    expect(flake).toContain('nixosConfigurations.nixos-box');
+    expect(flake).toContain('/home/ali');
+    expect(machine).toContain('networking.hostName = "nixos-box";');
+    expect(machine).not.toContain('homebrew');
+  });
+
   it('throws KitError when git init fails', async () => {
     const exec = {
       run: vi.fn().mockImplementation(async (_cmd: string, args: string[]) => {
@@ -67,5 +91,22 @@ describe('scaffoldKit', () => {
     expect(caught).toBeInstanceOf(KitError);
     expect(String((caught as KitError).cause)).toContain('git init failed');
     expect(String((caught as KitError).cause)).toContain('permission denied');
+  });
+
+  it('uses the exit code in git failure details when stderr is empty', async () => {
+    const exec = {
+      run: vi.fn().mockImplementation(async (_cmd: string, args: string[]) => {
+        if (args[0] === 'commit') return { stdout: '', stderr: '', code: 7 };
+        return { stdout: '', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+
+    await expect(
+      scaffoldKit({ target: join(dir, 'k4'), name: 'k4', machine: 'm', user: 'u', exec })
+    ).rejects.toMatchObject({
+      code: 'KIT_REPO_CLONE_FAILED',
+      cause: expect.stringContaining('exit 7'),
+    });
   });
 });

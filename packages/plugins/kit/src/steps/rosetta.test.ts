@@ -18,6 +18,10 @@ describe('rosettaStep', () => {
     expect(await rosettaStep.check({ exec: exec(1) })).toBe(false);
   });
 
+  it('check false without a step context', async () => {
+    expect(await rosettaStep.check()).toBe(false);
+  });
+
   it('run installs rosetta', async () => {
     const ctx = {
       exec: {
@@ -30,5 +34,19 @@ describe('rosettaStep', () => {
       '--install-rosetta',
       '--agree-to-license',
     ]);
+  });
+
+  it('run throws when Rosetta install fails', async () => {
+    const ctx = {
+      exec: {
+        run: vi.fn().mockResolvedValue({ stdout: '', stderr: 'install failed', code: 1 }),
+        spawn: vi.fn(),
+      },
+    };
+
+    await expect(rosettaStep.run(ctx)).rejects.toMatchObject({
+      code: 'KIT_ROSETTA_INSTALL_FAILED',
+      cause: 'install failed',
+    });
   });
 });

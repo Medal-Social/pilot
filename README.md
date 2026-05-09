@@ -18,7 +18,6 @@ Everything runs locally by default. Network services are used for publishing, di
 - [CONTRIBUTING.md](CONTRIBUTING.md) - contributor rules, testing policy, release discipline
 - [SECURITY.md](SECURITY.md) - vulnerability reporting and release verification
 - [docs/SECURITY-EXPECTATIONS.md](docs/SECURITY-EXPECTATIONS.md) - concrete security posture and non-goals
-- `docs/plans/` and `docs/specs/` - design history and implementation notes, useful for context but not the source of truth for current runtime behavior
 
 ## What Ships Today
 
@@ -54,7 +53,7 @@ pilot/
 │       └── kit/          # @medalsocial/kit
 ├── workers/pilot-landing/ # Landing page + install script worker
 ├── tests/                # Repo-level and e2e tests
-├── docs/                 # Architecture, workflows, security, plans, specs
+├── docs/                 # Architecture, workflows, security, and quality records
 ├── scripts/              # Build and install helpers
 └── .github/workflows/    # CI, release, deploy, and agentic automations
 ```
@@ -151,6 +150,7 @@ pilot completions fish > ~/.config/fish/completions/pilot.fish
 pnpm install
 pnpm build
 pnpm quality
+pnpm quality:100
 pnpm test
 pnpm dev
 ```
@@ -158,15 +158,16 @@ pnpm dev
 Contributor guardrails:
 
 - Use `pnpm` only; other package managers are blocked
+- Run `pnpm quality:100` before opening quality, workflow, package, or plugin changes
 - Add a changeset for release-worthy changes unless the PR is explicitly internal-only
 - Do not commit generated `dist/` or `coverage/` output
 - Review AI-assisted patches before merging and add tests for behavior changes
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor policy.
 
-## Plans And Specs
+## Operational References
 
-The repo keeps detailed plans and specs under `docs/plans/` and `docs/specs/`. Those files are useful design history and implementation context, but they can include intermediate approaches, earlier assumptions, and work that changed during implementation. Use the following files as the current operational reference instead:
+Long-form design history and implementation plans are maintained outside this source repository. Use the following files as the current operational reference:
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/WORKFLOWS.md](docs/WORKFLOWS.md)

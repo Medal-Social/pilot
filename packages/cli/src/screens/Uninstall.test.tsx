@@ -65,7 +65,7 @@ vi.mock('../installer/detect.js', () => ({
     .mockResolvedValue({ nix: false, brew: false, winget: false, npm: true }),
 }));
 
-vi.mock('../installer/exec.js', () => ({ realExec: {} }));
+vi.mock('../shell/exec.js', () => ({ realExec: {} }));
 
 vi.mock('../installer/runner.js', () => ({
   runUninstallSteps: vi.fn().mockResolvedValue(undefined),

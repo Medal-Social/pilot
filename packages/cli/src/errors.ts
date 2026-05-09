@@ -21,6 +21,8 @@ export const errorCodes = {
   COMPLETIONS_UNKNOWN_SHELL: 'COMPLETIONS_UNKNOWN_SHELL',
   ADMIN_NOT_AUTHENTICATED: 'ADMIN_NOT_AUTHENTICATED',
   ADMIN_ACCESS_DENIED: 'ADMIN_ACCESS_DENIED',
+  DISPATCH_UNAVAILABLE: 'DISPATCH_UNAVAILABLE',
+  DISPATCH_NOT_READY: 'DISPATCH_NOT_READY',
 } as const;
 
 type ErrorCode = (typeof errorCodes)[keyof typeof errorCodes];
@@ -50,6 +52,9 @@ const userMessages: Record<ErrorCode, string> = {
   COMPLETIONS_UNKNOWN_SHELL: 'Unknown shell. Supported shells: bash, zsh, fish.',
   ADMIN_NOT_AUTHENTICATED: 'You must be signed in to access the admin dashboard. Run: pilot login',
   ADMIN_ACCESS_DENIED: "You don't have permission to access the admin dashboard.",
+  DISPATCH_UNAVAILABLE:
+    'Dispatch is not set up yet on this machine. Run `pilot up dispatch` to install it.',
+  DISPATCH_NOT_READY: 'That dispatch action is not available yet in this Pilot release.',
 };
 
 export class PilotError extends Error {

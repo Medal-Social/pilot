@@ -51,4 +51,40 @@ describe('secretsStep', () => {
     await secretsStep.run({ exec, env: { KIT_REPO_DIR: dir, KIT_MACHINE: 'a', USER: 'b' } });
     expect(exec.run).not.toHaveBeenCalled();
   });
+
+  it('run throws when KIT_REPO_DIR is missing', async () => {
+    const exec = { run: vi.fn(), spawn: vi.fn() };
+
+    await expect(secretsStep.run({ exec, env: {} })).rejects.toMatchObject({
+      code: 'KIT_CONFIG_NOT_FOUND',
+    });
+  });
+
+  it('run falls back to empty machine and process user', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+
+    await secretsStep.run({ exec, env: { KIT_REPO_DIR: dir } });
+
+    expect(exec.run).toHaveBeenCalledWith('bash', [
+      join(dir, 'scripts', 'secrets-init.sh'),
+      'detect',
+      '',
+      process.env.USER ?? '',
+    ]);
+  });
+
+  it('run throws when secrets detection fails', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: 'secret failed', code: 1 }),
+      spawn: vi.fn(),
+    };
+
+    await expect(secretsStep.run({ exec, env: { KIT_REPO_DIR: dir } })).rejects.toMatchObject({
+      code: 'KIT_SECRETS_INIT_FAILED',
+      cause: 'secret failed',
+    });
+  });
 });

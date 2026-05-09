@@ -28,9 +28,10 @@ pilot/
 │   │   │   └── version.ts    # Package version export
 │   │   └── dist/             # Built output (tsup)
 │   └── plugins/
-│       ├── kit/              # @medalsocial/kit — machine management
-│       ├── sanity/           # @medalsocial/sanity — CMS integration
-│       └── pencil/           # @medalsocial/pencil — design tools
+│       └── kit/              # @medalsocial/kit — machine management
+├── workers/
+│   └── pilot-landing/        # Cloudflare Worker landing/install surface
+├── tests/                    # Repo-level guardrail tests
 ├── scripts/                  # Build, install, release scripts
 ├── docs/                     # Specs, plans, security docs
 ├── .github/workflows/        # CI/CD pipelines
@@ -38,6 +39,9 @@ pilot/
 ├── turbo.json                # Turborepo task graph
 └── pnpm-workspace.yaml       # Workspace definitions
 ```
+
+Current quality-sensitive package paths are `packages/cli`, `packages/plugins/kit`, and
+`workers/pilot-landing`.
 
 ## Request Flow
 

@@ -15,4 +15,4 @@ brew install pilot
 
 ## About
 
-Pilot is Medal Social's AI-powered CLI platform. Learn more at [github.com/Medal-Social/pilot](https://github.com/Medal-Social/pilot).
+Pilot is Medal Social's AI-powered CLI platform. Learn more at [github.com/Medal-Social/Pilot](https://github.com/Medal-Social/Pilot).

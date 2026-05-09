@@ -80,4 +80,57 @@ describe('migrateMachineFile', () => {
     const result = await migrateMachineFile(nixPath, 'ali-pro');
     expect(result.changed).toBe(false);
   });
+
+  it('appends the apps binding to an existing let block', async () => {
+    const nixPath = join(dir, 'ali-pro.nix');
+    writeFileSync(
+      nixPath,
+      `{ ... }: let
+  hostname = "ali-pro";
+in {
+  networking.hostName = hostname;
+  homebrew.casks = [
+    "zed"
+  ];
+}
+`
+    );
+
+    const result = await migrateMachineFile(nixPath, 'ali-pro');
+
+    expect(result.changed).toBe(true);
+    expect(readFileSync(nixPath, 'utf8')).toBe(
+      `{ ... }: let
+  hostname = "ali-pro";
+  apps = builtins.fromJSON (builtins.readFile ./ali-pro.apps.json);
+in {
+  networking.hostName = hostname;
+  homebrew.casks = apps.casks;
+}
+`
+    );
+    const apps = JSON.parse(readFileSync(join(dir, 'ali-pro.apps.json'), 'utf8'));
+    expect(apps).toEqual({ casks: ['zed'], brews: [] });
+  });
+
+  it('does nothing when no inline homebrew lists are present', async () => {
+    const nixPath = join(dir, 'ali-pro.nix');
+    writeFileSync(nixPath, `{ ... }: {\n  networking.hostName = "ali-pro";\n}\n`);
+
+    const result = await migrateMachineFile(nixPath, 'ali-pro');
+
+    expect(result.changed).toBe(false);
+    expect(readFileSync(nixPath, 'utf8')).toBe(
+      `{ ... }: {\n  networking.hostName = "ali-pro";\n}\n`
+    );
+  });
+
+  it('throws when inline lists exist but the nix shape cannot be rewritten', async () => {
+    const nixPath = join(dir, 'ali-pro.nix');
+    writeFileSync(nixPath, `homebrew.casks = [\n  "zed"\n];\n`);
+
+    await expect(migrateMachineFile(nixPath, 'ali-pro')).rejects.toThrow(
+      'Could not locate function-to-body transition'
+    );
+  });
 });

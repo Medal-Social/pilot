@@ -58,6 +58,7 @@
   },
   "dependencies": {
     "@medalsocial/kit": "workspace:*",
+    "@medalsocial/pilot-runtime": "workspace:*",
     "commander": "14.0.3",
     "ink": "7.0.2",
     "react": "19.2.6",

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { KitError } from '../errors.js';
-import { loadKitConfig } from './load.js';
+import { expandTilde, loadKitConfig } from './load.js';
 
 let tmp: string;
 
@@ -74,6 +74,24 @@ describe('loadKitConfig', () => {
     await expect(loadKitConfig({ env: {}, home: tmp })).rejects.toBeInstanceOf(KitError);
   });
 
+  it('throws KIT_CONFIG_INVALID when JSON cannot be parsed', async () => {
+    const path = join(tmp, 'kit.config.json');
+    writeFileSync(path, '{ not json');
+
+    await expect(loadKitConfig({ env: { KIT_CONFIG: path }, home: '/nope' })).rejects.toMatchObject(
+      { code: 'KIT_CONFIG_INVALID' }
+    );
+  });
+
+  it('throws KIT_CONFIG_INVALID when config schema validation fails', async () => {
+    const path = join(tmp, 'kit.config.json');
+    writeFileSync(path, JSON.stringify({ name: 'kit', repo: 'x', machines: {} }));
+
+    await expect(loadKitConfig({ env: { KIT_CONFIG: path }, home: '/nope' })).rejects.toMatchObject(
+      { code: 'KIT_CONFIG_INVALID' }
+    );
+  });
+
   it('derives repoDir from the config file location when not in the file', async () => {
     const path = join(tmp, 'kit.config.json');
     writeFileSync(
@@ -132,5 +150,12 @@ describe('loadKitConfig', () => {
     );
     const cfg = await loadKitConfig({ env: { KIT_CONFIG: path }, home: '/nope' });
     expect(cfg.repoDir).toBe(join(tmp, 'subdir/kit'));
+  });
+});
+
+describe('expandTilde', () => {
+  it('expands bare tilde and leaves non-tilde paths unchanged', () => {
+    expect(expandTilde('~', '/home/test')).toBe('/home/test');
+    expect(expandTilde('/opt/kit', '/home/test')).toBe('/opt/kit');
   });
 });

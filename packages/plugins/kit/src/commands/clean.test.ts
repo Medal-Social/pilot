@@ -106,6 +106,29 @@ describe('scanTargets', () => {
     expect(result).toHaveLength(0);
   });
 
+  it('excludes path targets without a path', async () => {
+    const exec = {
+      run: vi.fn(),
+      spawn: vi.fn(),
+    };
+    const custom: CleanTarget[] = [{ id: 'missing-path', label: 'Missing', kind: 'path' }];
+
+    await expect(scanTargets(exec, custom)).resolves.toEqual([]);
+    expect(exec.run).not.toHaveBeenCalled();
+  });
+
+  it('treats unparseable du output as zero bytes', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: 'not-a-number\t/path\n', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const custom: CleanTarget[] = [
+      { id: 'test-path', label: 'Test', kind: 'path', path: '/test/path' },
+    ];
+
+    await expect(scanTargets(exec, custom)).resolves.toEqual([]);
+  });
+
   it('includes docker target when docker info exits 0', async () => {
     const exec = {
       run: vi.fn().mockImplementation(async (cmd: string) => {
@@ -236,6 +259,58 @@ describe('deleteTarget', () => {
     expect(exec.run).toHaveBeenCalledWith('docker', ['system', 'prune', '-f']);
     expect(result.freed).toBeGreaterThan(0);
     expect(result.warning).toBeUndefined();
+  });
+
+  it.each([
+    ['1.5TB', Math.round(1.5 * 1024 ** 4)],
+    ['2MB', 2 * 1024 ** 2],
+    ['3kB', 3 * 1024],
+    ['12B', 12],
+    ['.GB', 0],
+  ])('parses docker reclaimed size %s', async (size, expected) => {
+    const exec = {
+      run: vi
+        .fn()
+        .mockResolvedValue({ stdout: `Total reclaimed space: ${size}\n`, stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const scanned: ScannedTarget = {
+      target: { id: 'docker', label: 'Docker', kind: 'docker' },
+      bytes: 0,
+    };
+
+    await expect(deleteTarget(exec, scanned)).resolves.toEqual({ id: 'docker', freed: expected });
+  });
+
+  it('returns zero when docker prune does not report reclaimed space', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: 'Nothing to prune\n', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const scanned: ScannedTarget = {
+      target: { id: 'docker', label: 'Docker', kind: 'docker' },
+      bytes: 0,
+    };
+
+    await expect(deleteTarget(exec, scanned)).resolves.toEqual({ id: 'docker', freed: 0 });
+  });
+
+  it('returns a warning when a non-docker target has no path', async () => {
+    const exec = {
+      run: vi.fn(),
+      spawn: vi.fn(),
+    };
+    const scanned: ScannedTarget = {
+      target: { id: 'bad', label: 'Bad', kind: 'path' },
+      bytes: 0,
+    };
+
+    await expect(deleteTarget(exec, scanned)).resolves.toEqual({
+      id: 'bad',
+      freed: 0,
+      warning: 'target bad has no path',
+    });
+    expect(exec.run).not.toHaveBeenCalled();
   });
 
   it('returns a docker warning when prune exits non-zero', async () => {

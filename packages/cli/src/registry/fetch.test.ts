@@ -87,6 +87,33 @@ describe('fetchRegistry', () => {
     expect(result.fromCache).toBe(false);
   });
 
+  it('re-fetches when cache JSON cannot be parsed', async () => {
+    const cacheFile = join(cacheDir, 'index.json');
+    writeFileSync(cacheFile, '{ not json');
+    const fresh = makeIndex([]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(fresh) })
+    );
+
+    const result = await fetchRegistry({ cacheDir, ttlMs: 3_600_000 });
+
+    expect(result.fromCache).toBe(false);
+    expect(result.offline).toBe(false);
+  });
+
+  it('falls back to bundled registry when HTTP fetch fails without cache', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 503, json: () => Promise.resolve({}) })
+    );
+
+    const result = await fetchRegistry({ cacheDir });
+
+    expect(result.offline).toBe(true);
+    expect(result.index.templates).toEqual(BUNDLED_REGISTRY.templates);
+  });
+
   it('returns bundled fallback when offline with no cache', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
     const result = await fetchRegistry({ cacheDir });
