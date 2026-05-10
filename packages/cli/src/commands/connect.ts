@@ -116,6 +116,7 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
         addCask: kitCtx.addCask,
         removeCask: kitCtx.removeCask,
         commitAndPush: kitCtx.commitAndPush,
+        resolveAppsFile: kitCtx.resolveAppsFile,
       });
       return [provider as unknown as MedalConnectProvider];
     });

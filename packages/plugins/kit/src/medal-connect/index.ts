@@ -3,6 +3,10 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { applyKitPatch } from './apply-patch.js';
+
+export type { KitPatch, KitPatchOp } from './apply-patch.js';
+
 import { type ExecDeps, execKit } from './exec.js';
 import { type SnapshotContext, snapshot } from './snapshot.js';
 import { watchKit } from './watch.js';
@@ -55,12 +59,20 @@ export interface CreateKitProviderOptions extends SnapshotContext {
   addCask: ExecDeps['addCask'];
   removeCask: ExecDeps['removeCask'];
   commitAndPush: ExecDeps['commitAndPush'];
+  /**
+   * Resolver for the machine-specific apps file. The kit can migrate
+   * `apps/apps.json` → `machines/<machine>.apps.json` mid-session, so the
+   * provider re-resolves on each call. The plugin doesn't know the layout —
+   * the CLI's `kit-context.ts` does — so we accept a closure here.
+   */
+  resolveAppsFile: () => string;
 }
 
 const CAPABILITIES: ProviderCapability[] = [
   { verb: 'rebuild', requiresUser: 'never', stepUp: 'none' },
   { verb: 'cask.add', requiresUser: 'never', stepUp: 'none' },
   { verb: 'cask.remove', requiresUser: 'never', stepUp: 'none' },
+  { verb: 'apply-patch-and-rebuild', requiresUser: 'never', stepUp: 'none' },
 ];
 
 export function createKitProvider(opts: CreateKitProviderOptions): MedalConnectProvider {
@@ -83,6 +95,8 @@ export function createKitProvider(opts: CreateKitProviderOptions): MedalConnectP
     removeCask: opts.removeCask,
     persistLastRebuild,
     commitAndPush: opts.commitAndPush,
+    applyPatch: (repoDir, patch) =>
+      applyKitPatch(repoDir, patch, { appsFilePath: opts.resolveAppsFile() }),
   };
 
   return {

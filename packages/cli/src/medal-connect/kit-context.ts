@@ -14,7 +14,21 @@ export interface KitContext {
   runRebuild: () => Promise<{ ok: boolean; durationMs: number; error?: string }>;
   addCask: (cask: string) => Promise<void>;
   removeCask: (cask: string) => Promise<void>;
-  commitAndPush: (message: string) => Promise<void>;
+  /**
+   * Stage + commit + push. When `paths` is provided, those repo-relative
+   * files are explicitly `git add`-ed (used by the
+   * `kit.apply-patch-and-rebuild` flow which mutates raw `.nix` files in
+   * addition to the apps file). When omitted, falls back to staging only
+   * the resolved apps file (legacy `kit.cask.add` / `kit.cask.remove`
+   * flow).
+   */
+  commitAndPush: (message: string, paths?: readonly string[]) => Promise<void>;
+  /**
+   * Resolver for the machine-specific apps file path. The kit can migrate
+   * `apps/apps.json` → `machines/<machine>.apps.json` mid-session, so we
+   * re-resolve on each call.
+   */
+  resolveAppsFile: () => string;
 }
 
 export interface ResolveOptions {
@@ -147,18 +161,45 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
         if (!isDuplicateError(e)) throw e;
       }
     },
-    commitAndPush: async (message) => {
+    resolveAppsFile: currentAppsFile,
+    commitAndPush: async (message, paths) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
-      const appsRelative = relative(kitRepoDir, currentAppsFile());
+      // Three-way branching on `paths`:
+      //   undefined  → legacy cask.add / cask.remove flow; stage only the
+      //                resolved apps file.
+      //   empty []   → explicit "no files to stage" — apply-patch-and-rebuild
+      //                with an empty patch. Skip the entire add/commit/push
+      //                cycle so the empty patch can't accidentally commit
+      //                unrelated worktree edits under the cloud-supplied
+      //                message (Codex P2 sweep — empty-explicit-paths fallback).
+      //   non-empty  → apply-patch-and-rebuild with mutated paths; stage
+      //                exactly those.
+      if (paths && paths.length === 0) return;
+      const stagePaths = paths ? Array.from(paths) : [relative(kitRepoDir, currentAppsFile())];
 
-      // `git add` is expected to succeed: the apps file definitely exists
-      // by the time we get here (addApp/removeApp wrote to it just now)
-      // and the path was resolved at setup time. Any non-zero exit is a
-      // real error (index lock, path validation, permissions) and MUST
-      // bubble up so the cloud sees a failed command instead of ok:true
-      // on a half-applied edit (Codex P2 sweep).
-      const r1 = await exec.run('git', ['add', appsRelative], { cwd: kitRepoDir });
+      // `git add` is expected to succeed: the path(s) were just written
+      // (or, for the apps-file fallback, the path was resolved at setup
+      // time and is known to exist). Any non-zero exit is a real error
+      // (index lock, path validation, permissions) and MUST bubble up so
+      // the cloud sees a failed command instead of ok:true on a
+      // half-applied edit (Codex P2 sweep).
+      //
+      // `--literal-pathspecs` is a TOP-LEVEL git option (not a `git add`
+      // option), so it precedes the subcommand: `git
+      // --literal-pathspecs add -- <paths>`. The option disables Git's
+      // pathspec magic (`:(glob)`, `:!exclude`, etc.) so a path that
+      // happens to contain `:(...)` characters (legal on Linux
+      // filenames) is staged as a literal filename rather than
+      // interpreted as a magic pathspec — which would otherwise let a
+      // remote `raw.write` patch with `:(glob)secrets/*` stage worktree
+      // files outside the file we actually wrote (Codex P1 sweep —
+      // stage raw-write paths as literal Git pathspecs; Codex P1 follow-up
+      // — `git add --literal-pathspecs` errors with "unknown option",
+      // the flag MUST be top-level).
+      const r1 = await exec.run('git', ['--literal-pathspecs', 'add', '--', ...stagePaths], {
+        cwd: kitRepoDir,
+      });
       if (r1.code !== 0) {
         const detail = r1.stderr.trim().slice(0, 500);
         throw new Error(`git add failed: ${detail || `exit ${r1.code}`}`);

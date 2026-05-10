@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createKitProvider } from './index.js';
 
 describe('createKitProvider', () => {
-  it('returns a provider with id "kit" and capabilities for rebuild + cask.add + cask.remove', () => {
+  it('returns a provider with id "kit" and the v1 verb capabilities', () => {
     const p = createKitProvider({
       kitRepoDir: '/tmp',
       machineId: 'm',
@@ -18,11 +18,12 @@ describe('createKitProvider', () => {
       addCask: async () => undefined,
       removeCask: async () => undefined,
       commitAndPush: async () => undefined,
+      resolveAppsFile: () => '/tmp/apps.json',
     });
     expect(p.id).toBe('kit');
     const caps = p.capabilities();
     const verbs = caps.map((c) => c.verb).sort();
-    expect(verbs).toEqual(['cask.add', 'cask.remove', 'rebuild']);
+    expect(verbs).toEqual(['apply-patch-and-rebuild', 'cask.add', 'cask.remove', 'rebuild']);
   });
 
   it('exec routes kit.rebuild through to deps.runRebuild', async () => {
@@ -36,10 +37,48 @@ describe('createKitProvider', () => {
       addCask: async () => undefined,
       removeCask: async () => undefined,
       commitAndPush: async () => undefined,
+      resolveAppsFile: () => '/tmp/apps.json',
     });
     const r = await p.exec({ kind: 'kit.rebuild', args: {} });
     expect(r.status).toBe('ok');
     expect(runRebuild).toHaveBeenCalledOnce();
+  });
+
+  it('exec routes kit.apply-patch-and-rebuild through to applyKitPatch + commit + rebuild', async () => {
+    // Exercises the index.ts applyPatch closure that wires
+    // resolveAppsFile() into applyKitPatch.
+    const tmp = mkdtempSync(join(tmpdir(), 'mc-prov-apply-'));
+    try {
+      // Plant an apps file so applyKitPatch's cask.add succeeds.
+      const appsFile = join(tmp, 'apps.json');
+      const fs = await import('node:fs');
+      fs.writeFileSync(appsFile, JSON.stringify({ casks: [], brews: [] }));
+      const commitAndPush = vi.fn(async () => undefined);
+      const runRebuild = vi.fn(async () => ({ ok: true, durationMs: 1 }));
+      const p = createKitProvider({
+        kitRepoDir: tmp,
+        machineId: 'm',
+        user: 'u',
+        machineType: 'darwin',
+        runRebuild,
+        addCask: async () => undefined,
+        removeCask: async () => undefined,
+        commitAndPush,
+        resolveAppsFile: () => appsFile,
+      });
+      const r = await p.exec({
+        kind: 'kit.apply-patch-and-rebuild',
+        args: {
+          patch: { ops: [{ kind: 'cask.add', cask: 'spotify' }] },
+          message: 'connect: add spotify',
+        },
+      });
+      expect(r.status).toBe('ok');
+      expect(runRebuild).toHaveBeenCalledOnce();
+      expect(commitAndPush).toHaveBeenCalledWith('connect: add spotify', expect.any(Array));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   describe('persistLastRebuild', () => {
@@ -63,6 +102,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const r = await p.exec({ kind: 'kit.rebuild', args: {} });
       expect(r.status).toBe('ok');
@@ -83,6 +123,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const r = await p.exec({ kind: 'kit.rebuild', args: {} });
       expect(r.status).toBe('failed');
@@ -105,6 +146,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const snap = await p.snapshot();
       expect(snap).toMatchObject({
@@ -131,6 +173,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const sub = p.watch(() => undefined);
       expect(typeof sub.dispose).toBe('function');
