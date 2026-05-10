@@ -3,6 +3,10 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { applyKitPatch } from './apply-patch.js';
+
+export type { KitPatch, KitPatchOp } from './apply-patch.js';
+
 import { type ExecDeps, execKit } from './exec.js';
 import { type SnapshotContext, snapshot } from './snapshot.js';
 import { watchKit } from './watch.js';
@@ -61,6 +65,7 @@ const CAPABILITIES: ProviderCapability[] = [
   { verb: 'rebuild', requiresUser: 'never', stepUp: 'none' },
   { verb: 'cask.add', requiresUser: 'never', stepUp: 'none' },
   { verb: 'cask.remove', requiresUser: 'never', stepUp: 'none' },
+  { verb: 'apply-patch-and-rebuild', requiresUser: 'never', stepUp: 'none' },
 ];
 
 export function createKitProvider(opts: CreateKitProviderOptions): MedalConnectProvider {
@@ -83,6 +88,7 @@ export function createKitProvider(opts: CreateKitProviderOptions): MedalConnectP
     removeCask: opts.removeCask,
     persistLastRebuild,
     commitAndPush: opts.commitAndPush,
+    applyPatch: applyKitPatch,
   };
 
   return {

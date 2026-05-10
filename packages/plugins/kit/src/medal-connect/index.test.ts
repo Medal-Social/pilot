@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createKitProvider } from './index.js';
 
 describe('createKitProvider', () => {
-  it('returns a provider with id "kit" and capabilities for rebuild + cask.add + cask.remove', () => {
+  it('returns a provider with id "kit" and the v1 verb capabilities', () => {
     const p = createKitProvider({
       kitRepoDir: '/tmp',
       machineId: 'm',
@@ -22,7 +22,7 @@ describe('createKitProvider', () => {
     expect(p.id).toBe('kit');
     const caps = p.capabilities();
     const verbs = caps.map((c) => c.verb).sort();
-    expect(verbs).toEqual(['cask.add', 'cask.remove', 'rebuild']);
+    expect(verbs).toEqual(['apply-patch-and-rebuild', 'cask.add', 'cask.remove', 'rebuild']);
   });
 
   it('exec routes kit.rebuild through to deps.runRebuild', async () => {

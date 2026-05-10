@@ -1,6 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { KitPatch } from './apply-patch.js';
 import type { SnapshotContext } from './snapshot.js';
 
 /**
@@ -33,6 +34,7 @@ export interface ExecDeps {
   removeCask: (cask: string) => Promise<void>;
   persistLastRebuild: (state: { at: number; ok: boolean }) => Promise<void>;
   commitAndPush: (message: string) => Promise<void>;
+  applyPatch: (repoDir: string, patch: KitPatch) => Promise<void>;
 }
 
 export async function execKit(
@@ -72,6 +74,35 @@ export async function execKit(
       return { status: 'ok', result: { cask } };
     } catch (e) {
       return { status: 'failed', error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  if (verb === 'apply-patch-and-rebuild') {
+    const patchArg = cmd.args.patch as KitPatch | undefined;
+    const message = cmd.args.message;
+    if (!patchArg || typeof patchArg !== 'object' || !Array.isArray(patchArg.ops)) {
+      return { status: 'failed', error: 'missing or invalid patch arg' };
+    }
+    if (typeof message !== 'string' || message.length === 0) {
+      return { status: 'failed', error: 'missing or invalid message arg' };
+    }
+    try {
+      await deps.applyPatch(_ctx.kitRepoDir, patchArg);
+      await deps.commitAndPush(message);
+    } catch (e) {
+      return { status: 'failed', error: e instanceof Error ? e.message : String(e) };
+    }
+    try {
+      const r = await deps.runRebuild();
+      await deps.persistLastRebuild({ at: Date.now(), ok: r.ok });
+      if (!r.ok) {
+        return { status: 'failed', error: r.error ?? 'rebuild failed' };
+      }
+      return { status: 'ok', result: { durationMs: r.durationMs } };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      await deps.persistLastRebuild({ at: Date.now(), ok: false }).catch(() => undefined);
+      return { status: 'failed', error };
     }
   }
 
