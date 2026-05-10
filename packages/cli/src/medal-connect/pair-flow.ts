@@ -216,6 +216,16 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
         continue;
       }
       const status = (parsed as { status?: unknown }).status;
+      // `rate_limited` is treated as transient: the cloud-side rate limiter
+      // throttles repeat polls of the same code to thwart enumeration of
+      // the 6-digit pair-code space (Codex P2 cloud-side fix). The CLI's
+      // 1Hz polling sits well inside the per-code budget under normal
+      // operation; an unexpectedly busy connection from this device just
+      // means the next poll will succeed once the bucket refills. Keep
+      // looping until the pair window elapses.
+      if (status === 'rate_limited') {
+        continue;
+      }
       if (status === 'pending' || status === 'expired' || status === 'not_found') {
         data = { status } as
           | { status: 'pending' }

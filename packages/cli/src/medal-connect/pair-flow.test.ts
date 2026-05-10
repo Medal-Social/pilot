@@ -474,6 +474,54 @@ describe('runPairFlow', () => {
     expect(pollCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('treats rate_limited as transient and keeps polling until claimed (Codex P2)', async () => {
+    // The cloud rate-limits per-code polls to thwart enumeration of the
+    // 6-digit code space. A `rate_limited` status from the cloud must NOT
+    // exit the loop — the next poll will succeed once the bucket refills.
+    const cloudKp = await generateKeyPairJwk();
+    const TOKEN = 'g'.repeat(64);
+    let cliPubkey: JsonWebKey | null = null;
+    let pollCount = 0;
+    let sealedToken: string | null = null;
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        cliPubkey = body.pubkeyJwk;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        pollCount += 1;
+        if (pollCount === 1) {
+          return new Response(JSON.stringify({ status: 'rate_limited' }), { status: 200 });
+        }
+        if (!sealedToken) {
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
+          sealedToken = JSON.stringify(sealed);
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'claimed',
+            sealedDeviceToken: sealedToken,
+            deviceId: 'd-rl',
+            workspaceId: 'w',
+            doUrl: 'http://do',
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error('unexpected');
+    });
+    const result = await runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+      timeoutMs: 5_000,
+    });
+    expect(result.deviceId).toBe('d-rl');
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
   it('skips poll responses with unknown status (backend rollout) and keeps retrying (Codex P2)', async () => {
     // If the backend introduces a new status the CLI doesn't recognise, the
     // poll loop must NOT crash and must NOT mistake it for claimed. Skip the
