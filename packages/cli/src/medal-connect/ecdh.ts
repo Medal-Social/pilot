@@ -98,6 +98,10 @@ export async function openSealed(
   const aesKey = await deriveAesKey(recipientPrivJwk, envelope.senderPubkeyJwk);
   const iv = fromB64Url(envelope.iv);
   const ct = fromB64Url(envelope.ciphertext);
-  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
+  const pt = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv as unknown as ArrayBuffer },
+    aesKey,
+    ct as unknown as ArrayBuffer
+  );
   return dec.decode(pt);
 }
