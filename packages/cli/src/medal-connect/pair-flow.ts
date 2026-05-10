@@ -74,14 +74,25 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
   opts.onCode?.(code, finalClaimUrl);
 
   // 3. Poll until claimed / expired / timeout.
+  //
+  // A thrown fetch (network blip, DNS hiccup, transient TLS error) used to
+  // exit the loop and force the user to restart `pilot connect` and approve
+  // a new code, even though the original claim could still complete inside
+  // `timeoutMs`. Treat fetch rejections the same as non-2xx responses:
+  // continue retrying until the timeout window elapses (Codex P2).
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, pollMs));
-    const pollRes = await fetchFn(`${apiBase}/api/medal-connect/pair/poll`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code }),
-    });
+    let pollRes: Response;
+    try {
+      pollRes = await fetchFn(`${apiBase}/api/medal-connect/pair/poll`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+    } catch {
+      continue; // transient — keep polling until timeoutMs is reached
+    }
     if (!pollRes.ok) continue;
     const data = (await pollRes.json()) as
       | { status: 'pending' }

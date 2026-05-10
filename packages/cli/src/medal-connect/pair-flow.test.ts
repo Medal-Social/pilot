@@ -203,6 +203,58 @@ describe('runPairFlow', () => {
     expect(pollCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('retries on thrown poll errors (network/DNS blip) and eventually succeeds (Codex P2)', async () => {
+    // A thrown fetch is the common transient failure mode (network drop, DNS
+    // hiccup). The polling loop must treat it the same as a non-2xx response
+    // and continue retrying until timeoutMs is reached, otherwise a single
+    // blip during a 5-minute pair window forces the user to restart.
+    const cloudKp = await generateKeyPairJwk();
+    const TOKEN = 'c'.repeat(64);
+    let cliPubkey: JsonWebKey | null = null;
+    let pollCount = 0;
+    let sealedToken: string | null = null;
+
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        cliPubkey = body.pubkeyJwk;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        pollCount += 1;
+        // First poll throws — simulate a transient network failure.
+        if (pollCount === 1) throw new Error('ECONNRESET');
+        // Subsequent polls succeed with the claimed envelope.
+        if (!sealedToken) {
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
+          sealedToken = JSON.stringify(sealed);
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'claimed',
+            sealedDeviceToken: sealedToken,
+            deviceId: 'd-throw',
+            workspaceId: 'w',
+            doUrl: 'http://do',
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error('unexpected');
+    });
+
+    const result = await runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+      timeoutMs: 5_000,
+    });
+    expect(result.deviceId).toBe('d-throw');
+    // Loop must have retried after the throw — pollCount >= 2.
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
   it('throws CONNECT_PAIR_TIMEOUT when polling never resolves', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))
