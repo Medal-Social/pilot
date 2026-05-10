@@ -107,6 +107,49 @@ describe('runDisconnectCommand', () => {
     expect(out.mock.calls.map((c) => c[0]).join('')).not.toContain('Disconnected');
   });
 
+  it('aborts the unpair request when the server hangs (Codex P2)', async () => {
+    // A dead TCP/TLS path or proxy that never returns a response would
+    // otherwise leave `pilot disconnect` hanging forever; the user kills
+    // the process and the local credential stays on disk while the server
+    // may have already revoked the device. The AbortController bound on
+    // the fetch surfaces the abort as a typed DISCONNECT_SERVER_ERROR
+    // within a known window.
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      deviceId: 'd',
+      workspaceId: 'w',
+      doUrl: 'u',
+      token: 't',
+    });
+    // fetch resolves only when its abort signal fires.
+    const fetchFn = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            const err = new Error('aborted');
+            (err as Error & { name: string }).name = 'AbortError';
+            reject(err);
+          });
+        })
+    );
+    const out = vi.fn();
+    const err = vi.fn();
+
+    const start = Date.now();
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+      _timeoutMs: 50,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_SERVER_ERROR,
+    });
+    // Must complete in a bounded time, not hang forever.
+    expect(Date.now() - start).toBeLessThan(500);
+    expect(out.mock.calls.map((c) => c[0]).join('')).not.toContain('Disconnected');
+  });
+
   it('throws DISCONNECT_UNPAIR_FAILED when server returns ok:false reason:auth', async () => {
     (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       deviceId: 'd',
