@@ -15,7 +15,17 @@ interface RunResult {
   stderr: string;
 }
 
-function run(cmd: string, args: string[], cwd: string): Promise<RunResult> {
+/**
+ * Subprocess runner. Defaulted to a small `spawn`-based implementation so the
+ * kit plugin stays self-contained (it cannot import the CLI package's Exec
+ * interface without creating a circular dependency). Callers in @medalsocial/pilot
+ * inject the canonical Pilot `Exec` via `readGitState(dir, exec)` so all
+ * subprocess execution flows through the audited Exec abstraction in
+ * production (Qodo PR Compliance ID 9).
+ */
+export type GitRunner = (cmd: string, args: string[], cwd: string) => Promise<RunResult>;
+
+const defaultRun: GitRunner = (cmd, args, cwd) => {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       cwd,
@@ -32,9 +42,10 @@ function run(cmd: string, args: string[], cwd: string): Promise<RunResult> {
     child.on('close', (code) => resolve({ code: code ?? 0, stdout, stderr }));
     child.on('error', () => resolve({ code: 1, stdout: '', stderr: 'spawn_failed' }));
   });
-}
+};
 
-export async function readGitState(repoDir: string): Promise<GitState> {
+export async function readGitState(repoDir: string, runner: GitRunner = defaultRun): Promise<GitState> {
+  const run = runner;
   const head = await run('git', ['rev-parse', 'HEAD'], repoDir);
   if (head.code !== 0) {
     return { kitRepoHead: null, ahead: 0, behind: 0 };

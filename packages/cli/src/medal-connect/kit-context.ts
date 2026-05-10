@@ -1,10 +1,11 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { addApp, removeApp } from '@medalsocial/kit/commands/apps';
+import { errorCodes, PilotError } from '../errors.js';
+import { type Exec, realExec } from '../shell/exec.js';
 
 export interface KitContext {
   kitRepoDir: string;
@@ -25,29 +26,19 @@ export interface ResolveOptions {
    */
   kitConfigPath?: string;
   machineId: string;
+  /**
+   * Subprocess execution interface. Defaulted to `realExec` so production
+   * uses the canonical Pilot Exec abstraction (per the repo rule that all
+   * `child_process` usage flow through `packages/cli/src/shell/exec.ts`).
+   * Tests inject a fake to assert which commands were spawned.
+   */
+  exec?: Exec;
 }
 
 interface KitConfigRaw {
   machines?: Record<string, { type: string; user: string }>;
   gitStrategy?: string;
   repoDir?: string;
-}
-
-interface RunResult {
-  code: number;
-  stderr: string;
-}
-
-function run(cmd: string, args: string[], cwd: string): Promise<RunResult> {
-  return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'inherit', 'pipe'] });
-    let stderr = '';
-    child.stderr?.on('data', (d) => {
-      stderr += d.toString();
-    });
-    child.on('close', (code) => resolve({ code: code ?? 0, stderr }));
-    child.on('error', () => resolve({ code: 1, stderr: 'spawn_failed' }));
-  });
 }
 
 /**
@@ -82,19 +73,22 @@ export async function getKitConfigPath(): Promise<string> {
  *   manage their own commits don't get double-committed.
  */
 export async function resolveKitContext(opts: ResolveOptions): Promise<KitContext> {
+  const exec = opts.exec ?? realExec;
   const kitConfigPath = opts.kitConfigPath ?? (await getKitConfigPath());
   if (!existsSync(kitConfigPath)) {
-    throw new Error(`kit.config.json not found at ${kitConfigPath}`);
+    throw new PilotError(errorCodes.CONNECT_KIT_CONFIG_NOT_FOUND, kitConfigPath);
   }
   const config = JSON.parse(readFileSync(kitConfigPath, 'utf8')) as KitConfigRaw;
   const machine = config.machines?.[opts.machineId];
   if (!machine) {
-    throw new Error(`machine ${opts.machineId} not in kit config`);
+    throw new PilotError(errorCodes.CONNECT_KIT_MACHINE_NOT_IN_CONFIG, opts.machineId);
   }
   // Match the kit loader's repoDir derivation: explicit `repoDir` (with `~`
   // expansion + relative-to-config resolution) wins, otherwise fall back to
   // the directory of the config file itself.
-  const kitRepoDir = config.repoDir ? resolveRepoDir(config.repoDir, kitConfigPath) : dirname(kitConfigPath);
+  const kitRepoDir = config.repoDir
+    ? resolveRepoDir(config.repoDir, kitConfigPath)
+    : dirname(kitConfigPath);
   const machineType = machine.type;
 
   return {
@@ -104,7 +98,9 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     runRebuild: async () => {
       const start = Date.now();
       const cmd = machineType === 'darwin' ? 'darwin-rebuild' : 'nixos-rebuild';
-      const r = await run('sudo', [cmd, 'switch', '--flake', `.#${opts.machineId}`], kitRepoDir);
+      const r = await exec.run('sudo', [cmd, 'switch', '--flake', `.#${opts.machineId}`], {
+        cwd: kitRepoDir,
+      });
       return {
         ok: r.code === 0,
         durationMs: Date.now() - start,
@@ -120,11 +116,11 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     commitAndPush: async (message) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
-      const r1 = await run('git', ['add', 'apps/apps.json'], kitRepoDir);
+      const r1 = await exec.run('git', ['add', 'apps/apps.json'], { cwd: kitRepoDir });
       if (r1.code !== 0) return; // nothing staged is fine
-      const r2 = await run('git', ['commit', '-m', message], kitRepoDir);
+      const r2 = await exec.run('git', ['commit', '-m', message], { cwd: kitRepoDir });
       if (r2.code !== 0) return; // nothing to commit is fine
-      await run('git', ['push'], kitRepoDir);
+      await exec.run('git', ['push'], { cwd: kitRepoDir });
     },
   };
 }

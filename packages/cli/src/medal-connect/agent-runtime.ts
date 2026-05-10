@@ -1,6 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import type { AgentFrame } from './frames.js';
 import { HeartbeatLoop } from './heartbeat.js';
 import type { Disposable, MedalConnectProvider, ProviderEvent } from './provider-types.js';
 import { WSClient } from './ws-client.js';
@@ -57,7 +58,8 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
   const watchers: Disposable[] = [];
 
   // Forward declaration so the WSClient onCommand handler can call into it.
-  let send: ((frame: unknown) => boolean) | null = null;
+  // Typed as `AgentFrame` to match WSClient.send(); avoids `any` at the seam.
+  let send: ((frame: AgentFrame) => boolean) | null = null;
 
   // Heartbeat is constructed up front (so we can `kick()` it from the welcome
   // handler) but holds a forward reference to the WS client.
@@ -103,8 +105,7 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
     },
   });
   ws.start();
-  // biome-ignore lint/suspicious/noExplicitAny: WSClient.send signature is internal-typed
-  send = (frame) => ws.send(frame as any);
+  send = (frame) => ws.send(frame);
 
   heartbeat = new HL(ws);
   heartbeat.start();
@@ -160,7 +161,19 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
       payload: { commandId: cmd.commandId },
     });
 
-    const r = await provider.exec({ kind: cmd.kind, args: cmd.args });
+    // A throwing provider.exec() must NOT bring down the runtime — the agent
+    // is a long-lived process and an unhandled rejection would surface as a
+    // crash with no command_result frame, leaving the cloud waiting forever.
+    // Wrap and emit a `command_result` with the exception message instead
+    // (Codex/Qodo P1 sweep — Reliability).
+    let r: Awaited<ReturnType<typeof provider.exec>>;
+    try {
+      r = await provider.exec({ kind: cmd.kind, args: cmd.args });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      send?.({ type: 'command_result', commandId: cmd.commandId, ok: false, error });
+      return;
+    }
     if (r.status === 'ok') {
       send?.({
         type: 'command_result',

@@ -45,16 +45,22 @@ describe('resolveKitContext', () => {
     expect(typeof ctx.commitAndPush).toBe('function');
   });
 
-  it('throws when machineId is not in the config', async () => {
-    await expect(
-      resolveKitContext({ kitConfigPath: join(dir, 'kit.config.json'), machineId: 'unknown' })
-    ).rejects.toThrow(/machine.*not.*config/i);
+  it('throws CONNECT_KIT_MACHINE_NOT_IN_CONFIG when machineId is not in the config', async () => {
+    const { errorCodes } = await import('../errors.js');
+    const promise = resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'unknown',
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_KIT_MACHINE_NOT_IN_CONFIG });
   });
 
-  it('throws when the kit config file is missing', async () => {
+  it('throws CONNECT_KIT_CONFIG_NOT_FOUND when the kit config file is missing', async () => {
+    const { errorCodes } = await import('../errors.js');
     rmSync(join(dir, 'kit.config.json'));
-    await expect(
-      resolveKitContext({ kitConfigPath: join(dir, 'kit.config.json'), machineId: 'm1' })
-    ).rejects.toThrow(/kit.config.json/);
+    const promise = resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'm1',
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_KIT_CONFIG_NOT_FOUND });
   });
 });

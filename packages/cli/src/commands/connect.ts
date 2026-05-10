@@ -102,12 +102,20 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
 
   // Resolution failures (no kit config, machine not registered, etc.) must
   // not crash the connect command — pairing already succeeded; the agent can
-  // still run with zero providers and report the missing config to the user.
+  // still run with zero providers and the user can fix the config and
+  // reconnect. Surface a user-facing message via PilotError when available;
+  // never echo the raw exception body to stdout (Qodo Security: don't leak
+  // file paths / tooling specifics into the CLI surface).
   let providers: MedalConnectProvider[] = [];
   try {
     providers = await buildProviders(result);
   } catch (e) {
-    out(`  Note: provider setup skipped: ${e instanceof Error ? e.message : String(e)}\n`);
+    const { PilotError } = await import('../errors.js');
+    if (e instanceof PilotError) {
+      out(`  Kit setup skipped: ${e.message}\n`);
+    } else {
+      out('  Kit setup skipped — see `pilot kit status` for details.\n');
+    }
   }
 
   const handle = await runAgentRuntime({

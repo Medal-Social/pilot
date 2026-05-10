@@ -316,6 +316,50 @@ describe('runAgentRuntime', () => {
     handle.shutdown();
   });
 
+  it('emits command_result ok:false when provider.exec throws (does not crash runtime)', async () => {
+    const provider = makeProvider({
+      exec: vi.fn(async () => {
+        throw new Error('kaboom');
+      }),
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: test seam
+    let onCommand: any;
+    const ClientCls = class {
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      static instances: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      sent: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      constructor(public opts: { onCommand: any }) {
+        onCommand = opts.onCommand;
+        ClientCls.instances.push(this);
+      }
+      start() {}
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      send(f: any) {
+        this.sent.push(f);
+        return true;
+      }
+      close() {}
+    };
+    const handle = await runAgentRuntime({
+      paired: { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' },
+      token: 'tok',
+      providers: [provider],
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _WSClient: ClientCls as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _HeartbeatLoop: MockHB as any,
+    });
+    onCommand({ type: 'command', commandId: 'c1', kind: 'kit.rebuild', args: {} });
+    await new Promise((r) => setImmediate(r));
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic frame shape
+    const sent = ClientCls.instances[0].sent as any[];
+    const result = sent.find((f) => f.type === 'command_result');
+    expect(result).toMatchObject({ commandId: 'c1', ok: false, error: 'kaboom' });
+    handle.shutdown();
+  });
+
   it('shutdown stops heartbeat + closes WS + disposes provider watchers', async () => {
     const dispose = vi.fn();
     const provider = makeProvider({ watch: vi.fn(() => ({ dispose })) });
