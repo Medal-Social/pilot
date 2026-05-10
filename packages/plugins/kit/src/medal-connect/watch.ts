@@ -39,9 +39,13 @@ export function watchKit(
 
   // Watch the resolved machine-specific apps file (machines/<id>.apps.json),
   // falling back to the legacy single-file location when no machine entry
-  // exists (`apps/apps.json`). Picking the file dynamically here means the
-  // watcher follows whichever file the snapshot reads — keeping cloud state
-  // consistent with what `pilot kit apps` mutates.
+  // exists (`apps/apps.json`). On a legacy kit, the watch path is the
+  // legacy file; if `pilot kit update` migrates the repo mid-session the
+  // legacy file may stop updating and the new machine file starts being
+  // edited instead. The legacy fallback also watches the machines/
+  // directory below so the migrated file's first appearance triggers a
+  // snapshot — followed by a permanent rewatch via the targets reconstruct
+  // path (Codex P2 sweep #10).
   const appsFile = resolveAppsFile(ctx.kitRepoDir, ctx.machineId);
   const targets: Array<{ dir: string; file: string }> = [
     { dir: join(ctx.kitRepoDir, '.medal-connect'), file: 'last-rebuild.json' },
@@ -62,14 +66,16 @@ export function watchKit(
 
   if (appsFile) {
     targets.push({ dir: dirname(appsFile), file: basename(appsFile) });
-  } else {
-    // No apps file yet — watch the conventional machine path so the first
-    // creation triggers a snapshot refresh.
-    targets.push({
-      dir: join(ctx.kitRepoDir, 'machines'),
-      file: `${ctx.machineId}.apps.json`,
-    });
   }
+  // Always watch the machines/ directory for the canonical
+  // machines/<id>.apps.json. On a fresh kit this catches the first creation;
+  // on a legacy kit this catches the migration (when `pilot kit update`
+  // creates the machine file) so the watcher keeps tracking after the
+  // migration even though the legacy file stops being mutated.
+  targets.push({
+    dir: join(ctx.kitRepoDir, 'machines'),
+    file: `${ctx.machineId}.apps.json`,
+  });
 
   let pending: NodeJS.Timeout | null = null;
   let disposed = false;
