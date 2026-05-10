@@ -104,6 +104,7 @@ describe('runDispatchDown', () => {
     // Must not have leaked anything to stdout/stderr (the user-facing message
     // is formatted by the top-level error handler, not by this function).
     expect(stdout).toBe('');
+    expect(stderr).toBe('');
   });
 });
 
