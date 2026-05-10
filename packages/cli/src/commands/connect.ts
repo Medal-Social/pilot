@@ -82,17 +82,31 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
     opts._providers ??
     (async (paired) => {
       const os = await import('node:os');
+      const { detectMachine, loadKitConfig } = await import('@medalsocial/kit');
       const { resolveKitContext } = await import('../medal-connect/kit-context.js');
       const { createKitProvider } = await import('@medalsocial/kit/medal-connect');
-      // resolveKitContext now uses the kit package's own configCandidates()
-      // so KIT_CONFIG and ~/Documents/Code/kit/kit.config.json are honored
+      // resolveKitContext uses the kit package's own configCandidates() so
+      // KIT_CONFIG and ~/Documents/Code/kit/kit.config.json are honored
       // identically to the standalone `pilot kit` commands.
       //
-      // The kit machine key is the friendly hostname (matching what
-      // `pilot kit` uses), NOT the cloud-side opaque deviceId. Without this
-      // every paired machine would miss its kit config (Codex P1 sweep).
-      const kitMachineId = os.hostname();
-      const kitCtx = await resolveKitContext({ machineId: kitMachineId });
+      // Mirror `pilot kit`'s machine resolution exactly (commands/kit.ts
+      // resolveMachine): detectMachine(hostname()) → if the result is in
+      // the configured machines, use it; otherwise fall back to the first
+      // configured machine. Raw hostname like "Alis-MacBook-Pro" doesn't
+      // match the configured "ali-pro" key, so we MUST run it through
+      // detectMachine to land on the same machine the user has been using
+      // standalone (Codex P1 sweep). Falling back to the first configured
+      // machine is what `pilot kit` does today; matching that behaviour is
+      // strictly better than leaving the agent provider-less.
+      const config = await loadKitConfig();
+      const detected = detectMachine(os.hostname());
+      const known = Object.keys(config.machines ?? {});
+      const kitMachineId =
+        detected && known.includes(detected) ? detected : (known[0] ?? os.hostname());
+      const kitCtx = await resolveKitContext({
+        kitConfigPath: config.configPath,
+        machineId: kitMachineId,
+      });
       const provider = createKitProvider({
         kitRepoDir: kitCtx.kitRepoDir,
         machineId: kitMachineId,

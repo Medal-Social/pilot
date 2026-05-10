@@ -47,22 +47,17 @@ export function watchKit(
     { dir: join(ctx.kitRepoDir, '.medal-connect'), file: 'last-rebuild.json' },
   ];
 
-  // Watch git state. `.git/HEAD` only mutates on branch switch (or detached
+  // Watch git state. `.git/HEAD` mutates on branch switch (or detached
   // checkout); on a normal branch checkout, commits / pulls / pushes update
-  // `.git/refs/heads/<branch>` instead. Watch both so the snapshot
-  // (kitRepoHead, ahead, behind) reflects all forms of git state change
-  // without requiring an agent reconnect (Codex P2 sweep).
+  // `.git/refs/heads/<branch>` instead. Watch HEAD always; the branch ref
+  // is set up dynamically below so it follows branch switches without
+  // needing an agent reconnect (Codex P2 sweep).
   targets.push({ dir: join(ctx.kitRepoDir, '.git'), file: 'HEAD' });
-  const branchRef = readBranchRef(ctx.kitRepoDir);
-  if (branchRef) {
-    targets.push({ dir: dirname(branchRef.absPath), file: basename(branchRef.absPath) });
-    // Also watch the packed-refs file because `git gc` / `git pack-refs`
-    // can move the loose ref into the packed file, after which subsequent
-    // commits update packed-refs instead of the loose file.
-    const packed = join(ctx.kitRepoDir, '.git', 'packed-refs');
-    if (existsSync(packed)) {
-      targets.push({ dir: dirname(packed), file: basename(packed) });
-    }
+  // packed-refs covers the case where `git gc` / `git pack-refs` moves the
+  // loose ref into the packed file.
+  const packed = join(ctx.kitRepoDir, '.git', 'packed-refs');
+  if (existsSync(packed)) {
+    targets.push({ dir: dirname(packed), file: basename(packed) });
   }
 
   if (appsFile) {
@@ -111,6 +106,62 @@ export function watchKit(
       // Ignore — directory may not exist or platform may not support the
       // watch API for this path. The snapshot is still re-read on connect.
     }
+  }
+
+  // Branch-ref watcher (Codex P2 'Rewire after branch changes'). The branch
+  // ref path is derived from .git/HEAD's contents, so a `git checkout
+  // other-branch` invalidates the previous watcher. We track the active
+  // branch-ref watcher in a slot and rewire it whenever HEAD changes — the
+  // HEAD watcher above still triggers `schedule()`, and the rewire happens
+  // alongside (snapshot + rewatch).
+  let branchWatcher: FSWatcher | null = null;
+  let watchedBranchRef: string | null = null;
+  const rewireBranchRef = () => {
+    if (disposed) return;
+    const next = readBranchRef(ctx.kitRepoDir);
+    if (!next || next.absPath === watchedBranchRef) return;
+    if (branchWatcher) {
+      try {
+        branchWatcher.close();
+      } catch {
+        // ignore
+      }
+      branchWatcher = null;
+    }
+    try {
+      const w = watch(
+        dirname(next.absPath),
+        { persistent: false },
+        (_event, filename) => {
+          if (filename === basename(next.absPath)) schedule();
+        }
+      );
+      w.on('error', () => undefined);
+      branchWatcher = w;
+      watchedBranchRef = next.absPath;
+      watchers.push(w);
+    } catch {
+      // Branch ref dir may not exist yet (fresh clone before first commit).
+      // Subsequent HEAD changes will retry.
+    }
+  };
+  // Initial wire so existing branch state is watched immediately.
+  rewireBranchRef();
+  // Re-wire whenever HEAD changes (branch switch). We attach this as a
+  // separate watcher rather than overloading `schedule()` because we need
+  // the rewire to fire on every HEAD event, not just the debounced one.
+  try {
+    const headWatcher = watch(
+      join(ctx.kitRepoDir, '.git'),
+      { persistent: false },
+      (_event, filename) => {
+        if (filename === 'HEAD') rewireBranchRef();
+      }
+    );
+    headWatcher.on('error', () => undefined);
+    watchers.push(headWatcher);
+  } catch {
+    // ignore
   }
 
   // Fallback: also watch the parent of `.medal-connect` so we pick up the
