@@ -176,8 +176,13 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
           const detail = r2.stderr.trim().slice(0, 500);
           throw new Error(`git commit failed: ${detail || `exit ${r2.code}`}`);
         }
-        // No-op commit (no staged diff) — skip the push too; nothing to send.
-        return;
+        // No-op commit (no staged diff) — but DO NOT skip the push. A
+        // previous attempt may have committed locally and only failed on
+        // push (network/creds); the retry's addCask/removeCask swallowed
+        // the duplicate, so this branch is the recovery path. Falling
+        // through to `git push` sends any pending unpushed commits;
+        // `git push` is itself a no-op when the local branch matches
+        // upstream (Codex P2 sweep #7 'Push pending commits after no-op').
       }
 
       // `git push` failures MUST surface — otherwise execKit returns ok:true
