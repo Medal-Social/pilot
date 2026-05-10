@@ -132,6 +132,36 @@ describe('runDisconnectCommand', () => {
     });
   });
 
+  it('throws DISCONNECT_BAD_RESPONSE when ok is a non-boolean truthy value (Codex P2)', async () => {
+    // A backend/proxy mismatch could return `{"ok": "false"}` (string) which
+    // would pass a loose `!data.ok` check and let the command nuke the
+    // local keychain entry even though the server didn't actually revoke
+    // the device. Strict boolean validation rejects this case.
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      deviceId: 'd',
+      workspaceId: 'w',
+      doUrl: 'u',
+      token: 't',
+    });
+    // Snapshot call count before the test, since the shared module-level
+    // mock retains state across test cases in this file.
+    const callsBefore = (deleteDeviceToken as ReturnType<typeof vi.fn>).mock.calls.length;
+    const fetchFn = vi.fn(async () => new Response('{"ok":"true"}', { status: 200 }));
+    const out = vi.fn();
+
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_BAD_RESPONSE,
+    });
+    // Did NOT delete the keychain in this run — we did not trust the
+    // server response.
+    expect((deleteDeviceToken as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
+  });
+
   it('throws DISCONNECT_BAD_RESPONSE on non-JSON 2xx', async () => {
     (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       deviceId: 'd',

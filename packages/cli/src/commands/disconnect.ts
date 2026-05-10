@@ -53,15 +53,29 @@ export async function runDisconnectCommand(
 
   // Parse defensively — a 2xx with non-JSON body should not become a raw
   // SyntaxError stack trace at the top level. Map to a typed PilotError.
-  let data: { ok?: boolean; reason?: string };
+  let data: { ok?: unknown; reason?: unknown };
   try {
-    data = (await res.json()) as { ok?: boolean; reason?: string };
+    data = (await res.json()) as { ok?: unknown; reason?: unknown };
   } catch (e) {
     throw new PilotError(errorCodes.DISCONNECT_BAD_RESPONSE, (e as Error).message);
   }
 
+  // Strict success check: only proceed to delete the local keychain entry
+  // if the server confirmed `ok === true` as a literal boolean. A backend
+  // or proxy mismatch could return non-boolean truthy values (e.g.
+  // `{"ok": "false"}` as a string) that pass a loose `!data.ok` check —
+  // we'd then nuke the local credential even though the server never
+  // actually revoked the device. Treat any other shape as a bad response
+  // (Codex P2 'Validate unpair JSON before deleting the token').
+  if (data.ok !== true && data.ok !== false) {
+    throw new PilotError(
+      errorCodes.DISCONNECT_BAD_RESPONSE,
+      `unexpected ok value: ${typeof data.ok}`
+    );
+  }
   if (!data.ok) {
-    throw new PilotError(errorCodes.DISCONNECT_UNPAIR_FAILED, data.reason);
+    const reason = typeof data.reason === 'string' ? data.reason : undefined;
+    throw new PilotError(errorCodes.DISCONNECT_UNPAIR_FAILED, reason);
   }
 
   // Server unpair succeeded; now delete the local keychain entry. If the OS
