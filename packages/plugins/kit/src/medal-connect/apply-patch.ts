@@ -5,7 +5,7 @@ import { lstatSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { HOMEBREW_NAME } from '../apps/schema.js';
 import { addApp, removeApp } from '../commands/apps.js';
-import { errorCodes, KitError } from '../errors.js';
+import { errorCodes } from '../errors.js';
 
 export type KitPatchOp =
   | { kind: 'cask.add'; cask: string }
