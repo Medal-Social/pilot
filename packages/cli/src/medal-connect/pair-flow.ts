@@ -56,11 +56,26 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
     pubkeyJwk: cliKp.publicJwk,
   };
   if (opts.workspace) createBody.workspaceSlug = opts.workspace;
-  const createRes = await fetchFn(`${apiBase}/api/medal-connect/pair`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(createBody),
-  });
+  // Pair-create is a single-shot request, not part of the polling loop, so a
+  // thrown fetch (offline, DNS failure, TLS error) must be mapped to the same
+  // typed CONNECT_PAIR_CREATE_FAILED error used for non-2xx responses —
+  // otherwise it falls through `program.ts` as a raw `fetch failed` despite
+  // the command having a dedicated user-facing message that mentions the
+  // network. Attach the underlying message as detail for support diagnostics
+  // (Codex P2).
+  let createRes: Response;
+  try {
+    createRes = await fetchFn(`${apiBase}/api/medal-connect/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createBody),
+    });
+  } catch (e) {
+    throw new PilotError(
+      errorCodes.CONNECT_PAIR_CREATE_FAILED,
+      (e as Error).message ?? 'network error'
+    );
+  }
   if (!createRes.ok) {
     throw new PilotError(errorCodes.CONNECT_PAIR_CREATE_FAILED, `HTTP ${createRes.status}`);
   }

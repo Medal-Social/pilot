@@ -125,6 +125,25 @@ describe('runPairFlow', () => {
     expect(storeDeviceToken).not.toHaveBeenCalled();
   });
 
+  it('throws CONNECT_PAIR_CREATE_FAILED when pair-create fetch THROWS (Codex P2)', async () => {
+    // Offline/DNS/TLS rejections during the single-shot pair-create must
+    // surface the same typed PilotError as a non-2xx response — otherwise
+    // they fall through program.ts as a raw `fetch failed`.
+    const fetchFn = vi.fn(async () => {
+      throw new Error('ENOTFOUND medal.social');
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_CREATE_FAILED,
+    });
+    expect(storeDeviceToken).not.toHaveBeenCalled();
+  });
+
   it('throws CONNECT_PAIR_CODE_EXPIRED on expired status', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))
