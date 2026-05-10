@@ -25,6 +25,7 @@ export const errorCodes = {
   DISPATCH_UNAVAILABLE: 'DISPATCH_UNAVAILABLE',
   DISPATCH_NOT_READY: 'DISPATCH_NOT_READY',
   CONNECT_PAIR_CREATE_FAILED: 'CONNECT_PAIR_CREATE_FAILED',
+  CONNECT_UNSUPPORTED_PLATFORM: 'CONNECT_UNSUPPORTED_PLATFORM',
   CONNECT_PAIR_CODE_EXPIRED: 'CONNECT_PAIR_CODE_EXPIRED',
   CONNECT_PAIR_CODE_NOT_FOUND: 'CONNECT_PAIR_CODE_NOT_FOUND',
   CONNECT_PAIR_TIMEOUT: 'CONNECT_PAIR_TIMEOUT',
@@ -71,6 +72,8 @@ const userMessages: Record<ErrorCode, string> = {
   DISPATCH_NOT_READY: 'That dispatch action is not available yet in this Pilot release.',
   CONNECT_PAIR_CREATE_FAILED:
     'Could not start the pair flow. Check your network connection and try again.',
+  CONNECT_UNSUPPORTED_PLATFORM:
+    'Medal Connect is not yet supported on this operating system. Currently supported: macOS and Linux.',
   CONNECT_PAIR_CODE_EXPIRED:
     'Pair code expired (5-minute window). Run `pilot connect` again to get a fresh code.',
   CONNECT_PAIR_CODE_NOT_FOUND:

@@ -17,6 +17,13 @@ export interface PairFlowOptions {
    * confirms (or overrides) in the browser.
    */
   workspace?: string;
+  /**
+   * Test seam: override `process.platform` so platform-specific behavior
+   * (e.g. Windows being rejected with CONNECT_UNSUPPORTED_PLATFORM) can be
+   * exercised without `vi.stubGlobal` / `Object.defineProperty` hacks.
+   * Production callers should leave this unset.
+   */
+  _platform?: NodeJS.Platform;
 }
 
 export interface PairFlowResult {
@@ -48,8 +55,24 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
   const cliKp = await generateKeyPairJwk();
 
   // 2. Create the pair code.
+  //
+  // The cloud schema for the pair-create body strictly accepts
+  // `os: 'darwin' | 'linux'`. Silently mapping any non-darwin platform to
+  // 'linux' (the previous behavior) would mislabel Windows devices in the
+  // dashboard and break OS-specific command routing. Until the cloud adds
+  // 'win32' (and friends) to the accepted set, fail explicitly here with a
+  // typed error so the user sees a clear message instead of pairing as Linux
+  // (Codex P2 'Send win32 or reject Windows').
+  const rawPlatform = opts._platform ?? process.platform;
+  let platform: 'darwin' | 'linux';
+  if (rawPlatform === 'darwin') {
+    platform = 'darwin';
+  } else if (rawPlatform === 'linux') {
+    platform = 'linux';
+  } else {
+    throw new PilotError(errorCodes.CONNECT_UNSUPPORTED_PLATFORM, rawPlatform);
+  }
   const hostname = os.hostname();
-  const platform: 'darwin' | 'linux' = process.platform === 'darwin' ? 'darwin' : 'linux';
   const createBody: Record<string, unknown> = {
     hostname,
     os: platform,
@@ -79,7 +102,34 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
   if (!createRes.ok) {
     throw new PilotError(errorCodes.CONNECT_PAIR_CREATE_FAILED, `HTTP ${createRes.status}`);
   }
-  const { code, claimUrl } = (await createRes.json()) as { code: string; claimUrl: string };
+  // A 2xx response can still carry a non-JSON body (HTML error page from a
+  // captive portal / proxy / CDN edge) or be missing the expected fields. A
+  // raw `await createRes.json()` followed by an unchecked cast would either
+  // throw a `SyntaxError` that bypasses the typed CONNECT_PAIR_CREATE_FAILED
+  // path, or hand `undefined` values to `onCode` and the polling loop. Wrap
+  // both parsing and shape validation here so any malformed-but-2xx response
+  // surfaces the same user-facing error as a non-2xx response (Codex P2
+  // 'Map malformed pair-create responses').
+  let code: string;
+  let claimUrl: string;
+  try {
+    const parsed = (await createRes.json()) as unknown;
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      typeof (parsed as { code?: unknown }).code !== 'string' ||
+      typeof (parsed as { claimUrl?: unknown }).claimUrl !== 'string'
+    ) {
+      throw new Error('malformed pair-create response: missing code or claimUrl');
+    }
+    code = (parsed as { code: string }).code;
+    claimUrl = (parsed as { claimUrl: string }).claimUrl;
+  } catch (e) {
+    throw new PilotError(
+      errorCodes.CONNECT_PAIR_CREATE_FAILED,
+      (e as Error).message ?? 'malformed response'
+    );
+  }
   // Append ?workspace=<slug> so the browser /connect/<code> page can
   // pre-select the workspace selector. Cloud-side claimUrl already points at
   // the right environment per MEDAL_CONNECT_PAIR_BASE_URL.

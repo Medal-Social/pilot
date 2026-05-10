@@ -111,8 +111,107 @@ describe('runPairFlow', () => {
     );
   });
 
+  it('rejects Windows (win32) with CONNECT_UNSUPPORTED_PLATFORM before pair-create (Codex P2)', async () => {
+    // The cloud schema is strictly 'darwin' | 'linux'. Silently sending
+    // os: 'linux' for win32 would mislabel Windows devices in the dashboard
+    // and break OS-specific command routing. Until the cloud adds 'win32',
+    // fail explicitly with a typed error instead of pairing-as-Linux.
+    const fetchFn = vi.fn(async () => {
+      throw new Error('fetch must not be called when platform is unsupported');
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+      _platform: 'win32',
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_UNSUPPORTED_PLATFORM,
+    });
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(storeDeviceToken).not.toHaveBeenCalled();
+  });
+
+  it('forwards platform "darwin" verbatim in pair-create body', async () => {
+    let createBody: Record<string, unknown> | null = null;
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        createBody = body;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 1,
+      timeoutMs: 30,
+      _platform: 'darwin',
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_PAIR_TIMEOUT });
+    expect(createBody).toMatchObject({ os: 'darwin' });
+  });
+
+  it('forwards platform "linux" verbatim in pair-create body', async () => {
+    let createBody: Record<string, unknown> | null = null;
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        createBody = body;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 1,
+      timeoutMs: 30,
+      _platform: 'linux',
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_PAIR_TIMEOUT });
+    expect(createBody).toMatchObject({ os: 'linux' });
+  });
+
   it('throws CONNECT_PAIR_CREATE_FAILED on non-2xx pair create', async () => {
     const fetchFn = vi.fn(async () => new Response('boom', { status: 500 }));
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_CREATE_FAILED,
+    });
+    expect(storeDeviceToken).not.toHaveBeenCalled();
+  });
+
+  it('throws CONNECT_PAIR_CREATE_FAILED on malformed (non-JSON) pair-create 2xx body (Codex P2)', async () => {
+    // A 2xx response from an edge/proxy/captive-portal can return non-JSON
+    // (HTML error page, empty body, plain text). `await createRes.json()` then
+    // throws SyntaxError that bypasses the typed CONNECT_PAIR_CREATE_FAILED
+    // path. Must surface the same PilotError as a non-2xx response.
+    const fetchFn = vi.fn(async () => new Response('<!doctype html>oops', { status: 200 }));
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_CREATE_FAILED,
+    });
+    expect(storeDeviceToken).not.toHaveBeenCalled();
+  });
+
+  it('throws CONNECT_PAIR_CREATE_FAILED when pair-create 2xx body is missing required fields (Codex P2)', async () => {
+    // Even valid JSON must contain code + claimUrl strings, otherwise the
+    // caller would propagate `undefined` into onCode and the polling loop.
+    // Map a successful-but-malformed response to the same typed error.
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ code: 123 }), { status: 200 }));
     const promise = runPairFlow({
       apiBase: 'http://x',
       fetchFn: fetchFn as unknown as typeof fetch,
