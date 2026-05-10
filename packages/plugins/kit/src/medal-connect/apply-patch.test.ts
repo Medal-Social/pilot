@@ -233,6 +233,42 @@ describe('applyKitPatch', () => {
     expect(() => readFileSync(join(dir, 'modules/legit.nix'), 'utf8')).toThrow();
   });
 
+  it('rejects raw.write under a non-directory ancestor (README.md/x.nix)', async () => {
+    // A patch that would try to write under a regular file ancestor would
+    // fail mid-application with ENOTDIR after a prior op already mutated
+    // the apps file. Preflight catches it (Codex P2 sweep #5).
+    writeFileSync(join(dir, 'README.md'), '# kit');
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'cask.add', cask: 'spotify' },
+        { kind: 'raw.write', path: 'README.md/inside.nix', content: '{ }' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /non-directory/i
+    );
+    // apps.json must be unchanged.
+    const apps = JSON.parse(readFileSync(appsFile, 'utf8'));
+    expect(apps.casks).toEqual(['existing']);
+  });
+
+  it('rejects raw.write whose leaf is an existing directory (EISDIR pre-empt)', async () => {
+    // raw.write to an existing directory would fail at writeFileSync
+    // with EISDIR, again leaving the kit repo dirty if a prior op wrote.
+    mkdirSync(join(dir, 'modules'), { recursive: true });
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'cask.add', cask: 'spotify' },
+        { kind: 'raw.write', path: 'modules', content: '{ }' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /existing directory/i
+    );
+    const apps = JSON.parse(readFileSync(appsFile, 'utf8'));
+    expect(apps.casks).toEqual(['existing']);
+  });
+
   it('preflights cask name shape (HOMEBREW_NAME) — invalid name rejects whole patch', async () => {
     // Earlier preflight only rejected empty strings; addApp would have
     // thrown KIT_APPS_INVALID_NAME on a name like 'bad name' (with a

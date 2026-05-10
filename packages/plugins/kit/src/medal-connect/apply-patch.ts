@@ -82,22 +82,47 @@ function ensureSafePath(repoDir: string, relPath: string): string {
     }
     throw new Error(`Medal Connect cannot edit ${firstSegment} paths: ${relPath}`);
   }
-  // Walk every existing ancestor inside the repo and reject if any is a
-  // symlink. We don't reject if a path simply doesn't exist yet (raw.write
-  // for a fresh file is the common case), only if a real component along
-  // the way is a symlink that could redirect the write.
+  // Walk every existing ancestor inside the repo and validate:
+  //   - reject symlinks (any component) — would redirect the write
+  //   - reject non-directory ancestors (e.g. README.md/x.nix where
+  //     README.md is a regular file) — phase 2's mkdirSync would throw
+  //     ENOTDIR after some earlier op already mutated the apps file,
+  //     leaving the kit repo dirty (Codex P2 sweep #5)
+  //   - reject when the leaf path exists as a directory — writeFileSync
+  //     would EISDIR with the same partial-application leak.
+  //
+  // Distinguish ENOENT (genuinely missing — fine, mkdirSync will create)
+  // from other errno values (EACCES, ELOOP, etc.) which indicate a real
+  // problem that should fail preflight.
   const segments = rel.split(sep);
   for (let i = 1; i <= segments.length; i++) {
     const partial = resolve(normalizedRepoDir, ...segments.slice(0, i));
+    const isLeaf = i === segments.length;
     let stat: ReturnType<typeof lstatSync> | undefined;
     try {
       stat = lstatSync(partial);
-    } catch {
-      // Path component doesn't exist — fine; mkdirSync below will create it.
-      break;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        // Path component doesn't exist yet — fine. mkdirSync below will
+        // create it (and any further missing components).
+        break;
+      }
+      throw new Error(`Medal Connect cannot stat path ${relPath}: ${code ?? 'unknown'}`);
     }
     if (stat.isSymbolicLink()) {
       throw new Error(`Medal Connect cannot write through symlinks: ${relPath}`);
+    }
+    // Ancestor must be a directory; only the leaf may be a regular file
+    // (which we'll overwrite). Reject ancestors that are files
+    // (writeFileSync at phase 2 would otherwise fail with ENOTDIR after
+    // a prior op already wrote the apps file) and reject leaf paths
+    // that are directories (would fail with EISDIR).
+    if (!isLeaf && !stat.isDirectory()) {
+      throw new Error(`Medal Connect cannot write under non-directory: ${relPath}`);
+    }
+    if (isLeaf && stat.isDirectory()) {
+      throw new Error(`Medal Connect cannot write to existing directory: ${relPath}`);
     }
   }
   return target;
