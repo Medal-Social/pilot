@@ -1,7 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { PilotError, errorCodes } from '../errors.js';
+import { errorCodes, PilotError } from '../errors.js';
 import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
 
 const DEFAULT_API_BASE = 'https://medal.social';

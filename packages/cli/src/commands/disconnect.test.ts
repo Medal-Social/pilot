@@ -8,7 +8,7 @@ vi.mock('../medal-connect/keychain.js', () => ({
   deleteDeviceToken: vi.fn(() => true),
 }));
 
-import { PilotError, errorCodes } from '../errors.js';
+import { errorCodes, PilotError } from '../errors.js';
 import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
 import { runDisconnectCommand } from './disconnect.js';
 

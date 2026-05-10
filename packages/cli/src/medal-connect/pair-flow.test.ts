@@ -5,7 +5,7 @@ vi.mock('./keychain', () => ({
   storeDeviceToken: vi.fn(),
 }));
 
-import { PilotError, errorCodes } from '../errors.js';
+import { errorCodes, PilotError } from '../errors.js';
 import { generateKeyPairJwk, sealForRecipient } from './ecdh';
 import { storeDeviceToken } from './keychain';
 import { runPairFlow } from './pair-flow';

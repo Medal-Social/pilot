@@ -78,8 +78,7 @@ const userMessages: Record<ErrorCode, string> = {
   CONNECT_KEYCHAIN_LOST_TOKEN:
     'Could not save the device token to your keychain. Check Keychain Access permissions and try again.',
   CONNECT_REJECTED: 'The Medal Connect server rejected this device. Run `pilot connect` again.',
-  DISCONNECT_NO_KEYCHAIN_RECORD:
-    'No paired device found in your keychain for that deviceId.',
+  DISCONNECT_NO_KEYCHAIN_RECORD: 'No paired device found in your keychain for that deviceId.',
   DISCONNECT_SERVER_ERROR: 'The Medal Connect server rejected the unpair request.',
   DISCONNECT_BAD_RESPONSE: 'The Medal Connect server returned an unexpected response.',
   DISCONNECT_UNPAIR_FAILED: 'Could not unpair the device. Try again in a few seconds.',

@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { PilotError, errorCodes } from '../errors.js';
+import { errorCodes, PilotError } from '../errors.js';
 import { generateKeyPairJwk, openSealed, type SealedEnvelope } from './ecdh.js';
 import { storeDeviceToken } from './keychain.js';
 
