@@ -222,7 +222,11 @@ export async function applyKitPatch(
 }
 
 function isDuplicateKitError(e: unknown): boolean {
-  if (e instanceof KitError) return e.code === errorCodes.KIT_APPS_DUPLICATE;
-  if (typeof e !== 'object' || e === null) return false;
-  return (e as { code?: unknown }).code === errorCodes.KIT_APPS_DUPLICATE;
+  // Match by discriminating `code` field (works for both KitError instances
+  // and any future error class that adopts the `code` convention).
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    (e as { code?: unknown }).code === errorCodes.KIT_APPS_DUPLICATE
+  );
 }

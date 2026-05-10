@@ -76,6 +76,30 @@ describe('execKit', () => {
     expect(res.status).toBe('failed');
     if (res.status === 'failed') expect(res.error).toMatch(/wrong provider/);
   });
+
+  it('cask.add: surfaces error when addCask throws (non-Error rejection)', async () => {
+    const deps = makeDeps({
+      addCask: vi.fn(async () => {
+        // Throwing a non-Error to exercise the `String(e)` branch.
+        // biome-ignore lint/suspicious/useErrorMessage: deliberate non-Error rejection
+        throw 'string-rejection';
+      }),
+    });
+    const res = await execKit({ kind: 'kit.cask.add', args: { cask: 'x' } }, ctx(), deps);
+    expect(res.status).toBe('failed');
+    if (res.status === 'failed') expect(res.error).toMatch(/string-rejection/);
+  });
+
+  it('cask.remove: surfaces commitAndPush failure as `failed`', async () => {
+    const deps = makeDeps({
+      commitAndPush: vi.fn(async () => {
+        throw new Error('push refused');
+      }),
+    });
+    const res = await execKit({ kind: 'kit.cask.remove', args: { cask: 'x' } }, ctx(), deps);
+    expect(res.status).toBe('failed');
+    if (res.status === 'failed') expect(res.error).toMatch(/push refused/);
+  });
 });
 
 describe('execKit kit.apply-patch-and-rebuild', () => {

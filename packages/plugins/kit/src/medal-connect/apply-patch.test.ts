@@ -214,6 +214,42 @@ describe('applyKitPatch', () => {
     expect(apps.casks).toEqual(['existing']);
   });
 
+  it('rejects raw.write with empty path string', async () => {
+    const patch: KitPatch = {
+      ops: [{ kind: 'raw.write', path: '', content: 'x' }],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /invalid path/i
+    );
+  });
+
+  it('rejects raw.write with non-string content', async () => {
+    const patch: KitPatch = {
+      ops: [
+        // @ts-expect-error -- intentionally invalid content type
+        { kind: 'raw.write', path: 'modules/x.nix', content: 42 },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /content must be a string/i
+    );
+  });
+
+  it('rethrows non-duplicate cask.add errors (e.g. corrupt apps.json)', async () => {
+    // Plant a malformed apps file that addApp's loader will reject. The
+    // resulting error is NOT KIT_APPS_DUPLICATE, so applyKitPatch must
+    // bubble it up rather than swallow.
+    writeFileSync(appsFile, '{not valid json');
+    const patch: KitPatch = { ops: [{ kind: 'cask.add', cask: 'spotify' }] };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow();
+  });
+
+  it('rethrows non-duplicate cask.remove errors', async () => {
+    writeFileSync(appsFile, '{not valid json');
+    const patch: KitPatch = { ops: [{ kind: 'cask.remove', cask: 'spotify' }] };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow();
+  });
+
   it('preflights all ops before mutating — partial application is impossible (Codex P2)', async () => {
     // The previous version applied ops in order, so a valid raw.write
     // followed by a forbidden raw.write to secrets/ would have left the

@@ -44,6 +44,43 @@ describe('createKitProvider', () => {
     expect(runRebuild).toHaveBeenCalledOnce();
   });
 
+  it('exec routes kit.apply-patch-and-rebuild through to applyKitPatch + commit + rebuild', async () => {
+    // Exercises the index.ts applyPatch closure that wires
+    // resolveAppsFile() into applyKitPatch.
+    const tmp = mkdtempSync(join(tmpdir(), 'mc-prov-apply-'));
+    try {
+      // Plant an apps file so applyKitPatch's cask.add succeeds.
+      const appsFile = join(tmp, 'apps.json');
+      const fs = await import('node:fs');
+      fs.writeFileSync(appsFile, JSON.stringify({ casks: [], brews: [] }));
+      const commitAndPush = vi.fn(async () => undefined);
+      const runRebuild = vi.fn(async () => ({ ok: true, durationMs: 1 }));
+      const p = createKitProvider({
+        kitRepoDir: tmp,
+        machineId: 'm',
+        user: 'u',
+        machineType: 'darwin',
+        runRebuild,
+        addCask: async () => undefined,
+        removeCask: async () => undefined,
+        commitAndPush,
+        resolveAppsFile: () => appsFile,
+      });
+      const r = await p.exec({
+        kind: 'kit.apply-patch-and-rebuild',
+        args: {
+          patch: { ops: [{ kind: 'cask.add', cask: 'spotify' }] },
+          message: 'connect: add spotify',
+        },
+      });
+      expect(r.status).toBe('ok');
+      expect(runRebuild).toHaveBeenCalledOnce();
+      expect(commitAndPush).toHaveBeenCalledWith('connect: add spotify', expect.any(Array));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   describe('persistLastRebuild', () => {
     let tmp: string;
 
