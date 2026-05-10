@@ -17,13 +17,20 @@ export interface KitContext {
 }
 
 export interface ResolveOptions {
-  kitConfigPath: string;
+  /**
+   * Optional explicit kit.config.json path. When omitted, we use the kit
+   * package's own resolution rules (`KIT_CONFIG` env > standard candidate
+   * locations) so Medal Connect picks up the same config the standalone kit
+   * commands already use — no second source of truth.
+   */
+  kitConfigPath?: string;
   machineId: string;
 }
 
-interface KitConfig {
-  machines: Record<string, { type: string; user: string }>;
+interface KitConfigRaw {
+  machines?: Record<string, { type: string; user: string }>;
   gitStrategy?: string;
+  repoDir?: string;
 }
 
 interface RunResult {
@@ -44,12 +51,21 @@ function run(cmd: string, args: string[], cwd: string): Promise<RunResult> {
 }
 
 /**
- * Default location for the kit config — `$HOME/.kit/kit.config.json`. The
- * `pilot connect` command uses this when no override is provided. Returning
- * the path lets tests inject a temp directory without touching $HOME.
+ * Returns the resolved kit.config.json path, using the same resolution rules
+ * as the standalone kit commands. Returns the first existing candidate so
+ * Medal Connect and `pilot kit ...` always agree on which file is canonical.
+ *
+ * Falls back to the first candidate even when nothing exists, so the caller
+ * can produce a "config not found at <X>" error pointing at the conventional
+ * location rather than a synthetic placeholder.
  */
-export function getKitConfigPath(): string {
-  return join(process.env.HOME ?? '~', '.kit', 'kit.config.json');
+export async function getKitConfigPath(): Promise<string> {
+  const { configCandidates } = await import('@medalsocial/kit');
+  const candidates = configCandidates();
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return candidates[0] ?? join(process.env.HOME ?? '~', 'Documents/Code/kit/kit.config.json');
 }
 
 /**
@@ -66,15 +82,19 @@ export function getKitConfigPath(): string {
  *   manage their own commits don't get double-committed.
  */
 export async function resolveKitContext(opts: ResolveOptions): Promise<KitContext> {
-  if (!existsSync(opts.kitConfigPath)) {
-    throw new Error(`kit.config.json not found at ${opts.kitConfigPath}`);
+  const kitConfigPath = opts.kitConfigPath ?? (await getKitConfigPath());
+  if (!existsSync(kitConfigPath)) {
+    throw new Error(`kit.config.json not found at ${kitConfigPath}`);
   }
-  const config = JSON.parse(readFileSync(opts.kitConfigPath, 'utf8')) as KitConfig;
-  const machine = config.machines[opts.machineId];
+  const config = JSON.parse(readFileSync(kitConfigPath, 'utf8')) as KitConfigRaw;
+  const machine = config.machines?.[opts.machineId];
   if (!machine) {
     throw new Error(`machine ${opts.machineId} not in kit config`);
   }
-  const kitRepoDir = dirname(opts.kitConfigPath);
+  // Match the kit loader's repoDir derivation: explicit `repoDir` (with `~`
+  // expansion + relative-to-config resolution) wins, otherwise fall back to
+  // the directory of the config file itself.
+  const kitRepoDir = config.repoDir ? resolveRepoDir(config.repoDir, kitConfigPath) : dirname(kitConfigPath);
   const machineType = machine.type;
 
   return {
@@ -107,4 +127,16 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       await run('git', ['push'], kitRepoDir);
     },
   };
+}
+
+function resolveRepoDir(repoDir: string, configPath: string): string {
+  // Expand `~/...` against $HOME to match the kit loader.
+  let expanded = repoDir;
+  const home = process.env.HOME ?? '';
+  if (expanded === '~') expanded = home;
+  else if (expanded.startsWith('~/')) expanded = join(home, expanded.slice(2));
+  // Treat absolute paths as-is; resolve relative paths against the config dir
+  // so the same kit.config.json works on machines with different layouts.
+  if (expanded.startsWith('/')) return expanded;
+  return join(dirname(configPath), expanded);
 }

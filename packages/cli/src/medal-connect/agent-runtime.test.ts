@@ -35,11 +35,15 @@ class MockHB {
   static instances: MockHB[] = [];
   started = false;
   stopped = false;
+  kicked = 0;
   constructor(_client: unknown) {
     MockHB.instances.push(this);
   }
   start() {
     this.started = true;
+  }
+  kick() {
+    this.kicked += 1;
   }
   stop() {
     this.stopped = true;
@@ -223,6 +227,92 @@ describe('runAgentRuntime', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/no provider/);
     expect(provider.exec).not.toHaveBeenCalled();
+    handle.shutdown();
+  });
+
+  it('drains welcome.queuedCommands through the same provider router', async () => {
+    const provider = makeProvider();
+    // biome-ignore lint/suspicious/noExplicitAny: test seam
+    let onWelcome: any;
+    const ClientCls = class {
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      static instances: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      sent: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      constructor(public opts: { onWelcome: any; onCommand: any }) {
+        onWelcome = opts.onWelcome;
+        ClientCls.instances.push(this);
+      }
+      start() {}
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      send(f: any) {
+        this.sent.push(f);
+        return true;
+      }
+      close() {}
+    };
+    const handle = await runAgentRuntime({
+      paired: { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' },
+      token: 'tok',
+      providers: [provider],
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _WSClient: ClientCls as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _HeartbeatLoop: MockHB as any,
+    });
+    onWelcome(7, [{ commandId: 'queued-1', kind: 'kit.rebuild', args: {} }]);
+    await new Promise((r) => setImmediate(r));
+    expect(provider.exec).toHaveBeenCalledWith({ kind: 'kit.rebuild', args: {} });
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic frame shape
+    const sent = ClientCls.instances[0].sent as any[];
+    expect(sent.find((f) => f.type === 'command_ack' && f.commandId === 'queued-1')).toBeTruthy();
+    expect(
+      sent.find((f) => f.type === 'command_result' && f.commandId === 'queued-1')
+    ).toBeTruthy();
+    handle.shutdown();
+  });
+
+  it('publishes provider snapshots on WS welcome (not before)', async () => {
+    const provider = makeProvider();
+    // biome-ignore lint/suspicious/noExplicitAny: test seam
+    let onWelcome: any;
+    const ClientCls = class {
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      static instances: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      sent: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      constructor(public opts: { onWelcome: any; onCommand: any }) {
+        onWelcome = opts.onWelcome;
+        ClientCls.instances.push(this);
+      }
+      start() {}
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      send(f: any) {
+        this.sent.push(f);
+        return true;
+      }
+      close() {}
+    };
+    const handle = await runAgentRuntime({
+      paired: { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' },
+      token: 'tok',
+      providers: [provider],
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _WSClient: ClientCls as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _HeartbeatLoop: MockHB as any,
+    });
+    // No snapshots before welcome.
+    expect(provider.snapshot).not.toHaveBeenCalled();
+    onWelcome(0, []);
+    await new Promise((r) => setImmediate(r));
+    expect(provider.snapshot).toHaveBeenCalledOnce();
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic frame shape
+    const sent = ClientCls.instances[0].sent as any[];
+    const stateFrame = sent.find((f) => f.type === 'event' && f.kind === 'kit.state');
+    expect(stateFrame).toBeTruthy();
     handle.shutdown();
   });
 

@@ -9,12 +9,23 @@ export interface RunAgentRuntimeOpts {
   paired: { deviceId: string; workspaceId: string; doUrl: string };
   token: string;
   providers: MedalConnectProvider[];
+  /**
+   * Optional stdout sink for status text emitted from the runtime (welcome
+   * notice, queued-command notes). Defaults to a no-op so tests stay quiet.
+   */
+  out?: (s: string) => void;
   // Test seams:
   _WSClient?: typeof WSClient;
   _HeartbeatLoop?: typeof HeartbeatLoop;
 }
 
 export interface AgentRuntimeHandle {
+  /**
+   * Re-emit each provider's snapshot as an event frame. The runtime also runs
+   * this automatically on every WS welcome (initial connect + every reconnect),
+   * so callers normally don't need to invoke it. Kept for test ergonomics and
+   * for callers that want to force a snapshot refresh out of band.
+   */
   onConnected(): void;
   shutdown(): void;
 }
@@ -40,6 +51,7 @@ interface CommandFrame {
 export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentRuntimeHandle> {
   const WSC = opts._WSClient ?? WSClient;
   const HL = opts._HeartbeatLoop ?? HeartbeatLoop;
+  const out = opts.out ?? (() => undefined);
 
   const wsUrl = `${opts.paired.doUrl.replace(/^http/, 'ws')}/ws/${opts.paired.workspaceId}`;
   const watchers: Disposable[] = [];
@@ -47,10 +59,45 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
   // Forward declaration so the WSClient onCommand handler can call into it.
   let send: ((frame: unknown) => boolean) | null = null;
 
+  // Heartbeat is constructed up front (so we can `kick()` it from the welcome
+  // handler) but holds a forward reference to the WS client.
+  let heartbeat: HeartbeatLoop | null = null;
+
+  // Initial-snapshot publisher. Called from `onWelcome` (so the socket is
+  // proven OPEN) and exposed as `handle.onConnected()` for tests / out-of-band
+  // refreshes. Each provider's snapshot is pushed as a `<id>.state` event.
+  const pushSnapshots = () => {
+    for (const p of opts.providers) {
+      void p
+        .snapshot()
+        .then((snap) => {
+          send?.({ type: 'event', kind: `${p.id}.state`, payload: snap });
+        })
+        .catch(() => undefined);
+    }
+  };
+
   const ws = new WSC({
     url: wsUrl,
     deviceId: opts.paired.deviceId,
     token: opts.token,
+    onWelcome: (rev, queuedCommands) => {
+      out(`  Resumed at rev ${rev}\n`);
+      // Per WSClient lifecycle: only after `welcome` is the socket fully
+      // accepted (auth verified, session resumed). This is the safe point to
+      // push initial snapshots and to drain any commands the DO queued while
+      // we were offline.
+      heartbeat?.kick();
+      pushSnapshots();
+      for (const queued of queuedCommands ?? []) {
+        void handleCommand({
+          type: 'command',
+          commandId: queued.commandId,
+          kind: queued.kind,
+          args: queued.args,
+        });
+      }
+    },
     onCommand: (cmd) => {
       void handleCommand(cmd as CommandFrame);
     },
@@ -59,7 +106,7 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
   // biome-ignore lint/suspicious/noExplicitAny: WSClient.send signature is internal-typed
   send = (frame) => ws.send(frame as any);
 
-  const heartbeat = new HL(ws);
+  heartbeat = new HL(ws);
   heartbeat.start();
 
   // Wire each provider's watcher to forward kit.state (or any provider event)
@@ -131,15 +178,9 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
 
   return {
     onConnected() {
-      // Push initial snapshots for each provider.
-      for (const p of opts.providers) {
-        void p
-          .snapshot()
-          .then((snap) => {
-            send?.({ type: 'event', kind: `${p.id}.state`, payload: snap });
-          })
-          .catch(() => undefined);
-      }
+      // Snapshots are published automatically on `onWelcome`; this is kept as
+      // an out-of-band hook for tests and callers that want to force-refresh.
+      pushSnapshots();
     },
     shutdown() {
       for (const w of watchers) {
@@ -149,7 +190,7 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
           /* noop */
         }
       }
-      heartbeat.stop();
+      heartbeat?.stop();
       ws.close();
     },
   };

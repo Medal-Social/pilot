@@ -38,11 +38,15 @@ class MockHeartbeatLoop {
   static instances: MockHeartbeatLoop[] = [];
   started = false;
   stopped = false;
+  kicked = 0;
   constructor(public client: { send: (frame: unknown) => boolean }) {
     MockHeartbeatLoop.instances.push(this);
   }
   start(): void {
     this.started = true;
+  }
+  kick(): void {
+    this.kicked += 1;
   }
   stop(): void {
     this.stopped = true;
@@ -208,7 +212,7 @@ describe('runConnectCommand', () => {
     expect(MockWSClient.instances[0].opts.url).toBe('wss://medal-connect.medal.social/ws/w');
   });
 
-  it('registers providers via the _providers seam and pushes their initial snapshot', async () => {
+  it('registers providers via the _providers seam (snapshots fire on WS welcome)', async () => {
     MockWSClient.instances = [];
     MockHeartbeatLoop.instances = [];
 
@@ -234,10 +238,24 @@ describe('runConnectCommand', () => {
       exec: vi.fn(async () => ({ status: 'ok' as const })),
     };
 
+    // Capture the WSClient onWelcome handler so the test can drive the
+    // welcome path explicitly. The runtime publishes snapshots via onWelcome
+    // (not before the socket is OPEN) to match the WSClient lifecycle.
+    let capturedOnWelcome:
+      | ((rev: number, queued: ReadonlyArray<unknown> | undefined) => void)
+      | null = null;
+    class CapturingWSClient extends MockWSClient {
+      constructor(opts: import('../medal-connect/ws-client.js').WSClientOptions) {
+        super(opts);
+        capturedOnWelcome = opts.onWelcome ?? null;
+      }
+    }
+
     await runConnectCommand({
       headless: true,
       _runPairFlow: fakePairFlow,
-      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _WSClient:
+        CapturingWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
       _HeartbeatLoop:
         MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
       _providers: async () => [
@@ -246,7 +264,11 @@ describe('runConnectCommand', () => {
       _stdout: stdout,
     });
 
-    // Initial snapshot pushed on connect.
+    // No snapshot before welcome (would race with socket OPEN).
+    expect(snapshotFn).not.toHaveBeenCalled();
+
+    // Welcome arrives → runtime drains queued + publishes snapshots.
+    capturedOnWelcome?.(0, []);
     await new Promise((r) => setImmediate(r));
     expect(snapshotFn).toHaveBeenCalledOnce();
   });

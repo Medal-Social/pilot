@@ -83,11 +83,10 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
     (async (paired) => {
       const { resolveKitContext } = await import('../medal-connect/kit-context.js');
       const { createKitProvider } = await import('@medalsocial/kit/medal-connect');
-      const { getKitConfigPath } = await import('../medal-connect/kit-context.js');
-      const kitCtx = await resolveKitContext({
-        kitConfigPath: getKitConfigPath(),
-        machineId: paired.deviceId,
-      });
+      // resolveKitContext now uses the kit package's own configCandidates()
+      // so KIT_CONFIG and ~/Documents/Code/kit/kit.config.json are honored
+      // identically to the standalone `pilot kit` commands.
+      const kitCtx = await resolveKitContext({ machineId: paired.deviceId });
       const provider = createKitProvider({
         kitRepoDir: kitCtx.kitRepoDir,
         machineId: paired.deviceId,
@@ -115,10 +114,14 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
     paired: result,
     token: stored.token,
     providers,
+    out,
     _WSClient: opts._WSClient,
     _HeartbeatLoop: opts._HeartbeatLoop,
   });
-  handle.onConnected();
+  // The runtime self-publishes provider snapshots on every WS welcome (initial
+  // connect + every reconnect). No need to call `handle.onConnected()` here —
+  // doing so would emit a snapshot before the socket is OPEN and the frame
+  // would be dropped.
 
   // Graceful shutdown on Ctrl-C / SIGTERM.
   const cleanup = () => {
