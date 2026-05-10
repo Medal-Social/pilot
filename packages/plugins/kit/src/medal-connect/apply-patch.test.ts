@@ -150,9 +150,7 @@ describe('applyKitPatch', () => {
     const patch: KitPatch = {
       ops: [{ kind: 'raw.write', path: 'modules/symlinked.nix', content: 'pwn' }],
     };
-    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
-      /symlink/i
-    );
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(/symlink/i);
     // Verify the redirect target was NOT overwritten.
     expect(readFileSync(join(realTarget, 'redirected'), 'utf8')).toBe('original');
     rmSync(realTarget, { recursive: true, force: true });
@@ -164,9 +162,7 @@ describe('applyKitPatch', () => {
     const patch: KitPatch = {
       ops: [{ kind: 'raw.write', path: 'evil-dir/inside.nix', content: 'pwn' }],
     };
-    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
-      /symlink/i
-    );
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(/symlink/i);
     rmSync(realDir, { recursive: true, force: true });
   });
 
@@ -231,9 +227,7 @@ describe('applyKitPatch', () => {
         { kind: 'raw.write', path: 'secrets/oslo.yaml', content: 'BOGUS' },
       ],
     };
-    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
-      /secrets/
-    );
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(/secrets/);
     // Verify the legit-looking file was NEVER created (preflight rejected
     // the whole patch before phase 2 began).
     expect(() => readFileSync(join(dir, 'modules/legit.nix'), 'utf8')).toThrow();
@@ -248,9 +242,7 @@ describe('applyKitPatch', () => {
         { kind: 'cask.add', cask: '' },
       ],
     };
-    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
-      /cask/i
-    );
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(/cask/i);
     expect(() => readFileSync(join(dir, 'modules/before.nix'), 'utf8')).toThrow();
   });
 });

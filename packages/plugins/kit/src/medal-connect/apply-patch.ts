@@ -88,7 +88,7 @@ function ensureSafePath(repoDir: string, relPath: string): string {
   const segments = rel.split(sep);
   for (let i = 1; i <= segments.length; i++) {
     const partial = resolve(normalizedRepoDir, ...segments.slice(0, i));
-    let stat;
+    let stat: ReturnType<typeof lstatSync> | undefined;
     try {
       stat = lstatSync(partial);
     } catch {
