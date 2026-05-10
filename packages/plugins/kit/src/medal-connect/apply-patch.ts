@@ -261,11 +261,20 @@ export async function applyKitPatch(
  * Path-SEGMENT comparison (not raw substring): `modules` vs
  * `modules2/x.nix` are unrelated (distinct first segments) and must not
  * trigger.
+ *
+ * Comparison is case-INSENSITIVE to match macOS default (HFS+/APFS
+ * case-insensitive) and Windows behaviour (Codex P2 + Qodo bug sweep
+ * #4 / 5): `Modules` and `modules/x.nix` are the same path on those
+ * filesystems, so phase 2 would otherwise EEXIST/ENOTDIR after a prior
+ * write and leave the kit dirty. Mirrors the case-folding approach in
+ * `ensureSafePath` for forbidden first segments.
  */
 function describePathPrefixConflict(a: string, b: string): string | null {
-  if (a === b) return 'duplicate path';
-  const aSegs = a.split(sep);
-  const bSegs = b.split(sep);
+  const aLower = a.toLowerCase();
+  const bLower = b.toLowerCase();
+  if (aLower === bLower) return 'duplicate path';
+  const aSegs = aLower.split(sep);
+  const bSegs = bLower.split(sep);
   const shorter = aSegs.length < bSegs.length ? aSegs : bSegs;
   const longer = aSegs.length < bSegs.length ? bSegs : aSegs;
   for (let i = 0; i < shorter.length; i++) {

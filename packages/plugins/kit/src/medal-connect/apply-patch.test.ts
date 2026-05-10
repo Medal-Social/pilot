@@ -413,4 +413,32 @@ describe('applyKitPatch', () => {
     expect(readFileSync(join(dir, 'modules/a.nix'), 'utf8')).toBe('{ a = true; }');
     expect(readFileSync(join(dir, 'modules/b.nix'), 'utf8')).toBe('{ b = true; }');
   });
+
+  it('rejects raw.write conflicts case-insensitively (macOS default volumes)', async () => {
+    // On macOS HFS+/APFS default (case-insensitive), `Modules` and
+    // `modules/x.nix` are the same path. A case-sensitive comparison
+    // would let both writes pass preflight and then EEXIST/ENOTDIR mid-
+    // application, leaving the kit dirty (Codex P2 + Qodo sweep).
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'Modules', content: '{ }' },
+        { kind: 'raw.write', path: 'modules/x.nix', content: '{ }' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /prefix|conflict|ancestor/i
+    );
+  });
+
+  it('rejects raw.write duplicate-path conflict case-insensitively', async () => {
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules/X.nix', content: 'one' },
+        { kind: 'raw.write', path: 'MODULES/x.nix', content: 'two' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /duplicate|conflict|prefix/i
+    );
+  });
 });
