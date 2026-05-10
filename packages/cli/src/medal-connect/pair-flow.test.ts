@@ -37,7 +37,8 @@ describe('runPairFlow', () => {
           return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
         }
         if (!sealedToken) {
-          const sealed = await sealForRecipient(cliPubkey!, cloudKp.privateJwk, TOKEN);
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
           sealedToken = JSON.stringify(sealed);
         }
         return new Response(
@@ -51,7 +52,7 @@ describe('runPairFlow', () => {
           { status: 200 }
         );
       }
-      throw new Error('unexpected ' + url);
+      throw new Error(`unexpected ${url}`);
     });
 
     const result = await runPairFlow({
@@ -129,7 +130,8 @@ describe('runPairFlow', () => {
         pollCount += 1;
         if (pollCount === 1) return new Response('boom', { status: 503 });
         if (!sealedToken) {
-          const sealed = await sealForRecipient(cliPubkey!, cloudKp.privateJwk, TOKEN);
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
           sealedToken = JSON.stringify(sealed);
         }
         return new Response(

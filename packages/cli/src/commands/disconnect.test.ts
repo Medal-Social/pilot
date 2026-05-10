@@ -8,8 +8,8 @@ vi.mock('../medal-connect/keychain.js', () => ({
   deleteDeviceToken: vi.fn(() => true),
 }));
 
+import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
 import { runDisconnectCommand } from './disconnect.js';
-import { loadDeviceToken, deleteDeviceToken } from '../medal-connect/keychain.js';
 
 describe('runDisconnectCommand', () => {
   it('calls /unpair with deviceId + token, deletes keychain on success', async () => {
@@ -32,11 +32,9 @@ describe('runDisconnectCommand', () => {
 
     expect(fetchFn).toHaveBeenCalledWith(
       'http://x/api/medal-connect/unpair',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({ method: 'POST' })
     );
-    const callBody = JSON.parse(
-      (fetchFn.mock.calls[0][1] as RequestInit).body as string,
-    );
+    const callBody = JSON.parse((fetchFn.mock.calls[0][1] as RequestInit).body as string);
     expect(callBody).toEqual({ deviceId: 'd1', token: 'tok' });
     expect(deleteDeviceToken).toHaveBeenCalledWith('d1');
     expect(out.mock.calls.map((c) => c[0]).join('')).toContain('Disconnected d1');
@@ -52,7 +50,7 @@ describe('runDisconnectCommand', () => {
         _fetch: vi.fn() as unknown as typeof fetch,
         _stdout: out,
         _stderr: err,
-      }),
+      })
     ).rejects.toThrow(/no_keychain_record/);
   });
 
@@ -72,7 +70,7 @@ describe('runDisconnectCommand', () => {
         _fetch: fetchFn as unknown as typeof fetch,
         _stdout: out,
         _stderr: err,
-      }),
+      })
     ).rejects.toThrow(/server_500/);
   });
 
@@ -84,7 +82,7 @@ describe('runDisconnectCommand', () => {
       token: 't',
     });
     const fetchFn = vi.fn(
-      async () => new Response('{"ok":false,"reason":"auth"}', { status: 200 }),
+      async () => new Response('{"ok":false,"reason":"auth"}', { status: 200 })
     );
     const out = vi.fn();
     const err = vi.fn();
@@ -94,7 +92,7 @@ describe('runDisconnectCommand', () => {
         _fetch: fetchFn as unknown as typeof fetch,
         _stdout: out,
         _stderr: err,
-      }),
+      })
     ).rejects.toThrow(/unpair_auth/);
   });
 });

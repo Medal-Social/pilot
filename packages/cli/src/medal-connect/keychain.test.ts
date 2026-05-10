@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockStore = new Map<string, string>();
 vi.mock('@napi-rs/keyring', () => {
@@ -20,7 +20,7 @@ vi.mock('@napi-rs/keyring', () => {
   return { Entry };
 });
 
-import { storeDeviceToken, loadDeviceToken, deleteDeviceToken } from './keychain';
+import { deleteDeviceToken, loadDeviceToken, storeDeviceToken } from './keychain';
 
 beforeEach(() => mockStore.clear());
 

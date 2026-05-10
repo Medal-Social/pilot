@@ -1,7 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { loadDeviceToken, deleteDeviceToken } from '../medal-connect/keychain.js';
+import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
 
 const DEFAULT_API_BASE = 'https://medal.social';
 
@@ -15,7 +15,7 @@ export interface DisconnectOpts {
 
 export async function runDisconnectCommand(
   deviceId: string,
-  opts: DisconnectOpts = {},
+  opts: DisconnectOpts = {}
 ): Promise<void> {
   const fetchFn = opts._fetch ?? fetch;
   const out = opts._stdout ?? ((s: string) => process.stdout.write(s));

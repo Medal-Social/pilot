@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from 'vitest';
+import type { WSClientOptions } from '../medal-connect/ws-client.js';
 import { runConnectCommand } from './connect.js';
 
 vi.mock('../medal-connect/keychain.js', () => ({
@@ -17,7 +18,7 @@ class MockWSClient {
   static instances: MockWSClient[] = [];
   started = false;
   closed = false;
-  constructor(public opts: any) {
+  constructor(public opts: WSClientOptions) {
     MockWSClient.instances.push(this);
   }
   start(): void {
@@ -36,7 +37,7 @@ class MockHeartbeatLoop {
   static instances: MockHeartbeatLoop[] = [];
   started = false;
   stopped = false;
-  constructor(public client: any) {
+  constructor(public client: { send: (frame: unknown) => boolean }) {
     MockHeartbeatLoop.instances.push(this);
   }
   start(): void {
@@ -47,6 +48,8 @@ class MockHeartbeatLoop {
   }
 }
 
+type PairFlowOpts = Parameters<typeof import('../medal-connect/pair-flow.js').runPairFlow>[0];
+
 describe('runConnectCommand', () => {
   it('runs pair flow and starts WS + heartbeat', async () => {
     MockWSClient.instances = [];
@@ -55,7 +58,7 @@ describe('runConnectCommand', () => {
     const stdout = vi.fn();
     const onCodeCalls: Array<[string, string]> = [];
 
-    const fakePairFlow = vi.fn(async (opts: any) => {
+    const fakePairFlow = vi.fn(async (opts: PairFlowOpts) => {
       opts.onCode?.('123456', 'http://medal.social/connect/123456');
       onCodeCalls.push(['123456', 'http://medal.social/connect/123456']);
       return { deviceId: 'd-x', workspaceId: 'ws-x', doUrl: 'http://do' };
@@ -64,8 +67,9 @@ describe('runConnectCommand', () => {
     await runConnectCommand({
       headless: true,
       _runPairFlow: fakePairFlow,
-      _WSClient: MockWSClient as any,
-      _HeartbeatLoop: MockHeartbeatLoop as any,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
       _stdout: stdout,
     });
 
@@ -94,15 +98,16 @@ describe('runConnectCommand', () => {
     MockHeartbeatLoop.instances = [];
 
     const stdout = vi.fn();
-    const fakePairFlow = vi.fn(async (opts: any) => {
+    const fakePairFlow = vi.fn(async (opts: PairFlowOpts) => {
       opts.onCode?.('500005', 'url');
       return { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' };
     });
     await runConnectCommand({
       headless: true,
       _runPairFlow: fakePairFlow,
-      _WSClient: MockWSClient as any,
-      _HeartbeatLoop: MockHeartbeatLoop as any,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
       _stdout: stdout,
     });
     expect(stdout.mock.calls.map((c) => c[0]).join('')).toContain('500-005');
@@ -114,15 +119,16 @@ describe('runConnectCommand', () => {
 
     const stdout = vi.fn();
     const fakeOpen = vi.fn(async () => undefined);
-    const fakePairFlow = vi.fn(async (opts: any) => {
+    const fakePairFlow = vi.fn(async (opts: PairFlowOpts) => {
       opts.onCode?.('111111', 'http://example/connect/111111');
       return { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' };
     });
     await runConnectCommand({
       headless: true,
       _runPairFlow: fakePairFlow,
-      _WSClient: MockWSClient as any,
-      _HeartbeatLoop: MockHeartbeatLoop as any,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
       _open: fakeOpen,
       _stdout: stdout,
     });
@@ -135,15 +141,16 @@ describe('runConnectCommand', () => {
 
     const stdout = vi.fn();
     const fakeOpen = vi.fn(async () => undefined);
-    const fakePairFlow = vi.fn(async (opts: any) => {
+    const fakePairFlow = vi.fn(async (opts: PairFlowOpts) => {
       opts.onCode?.('111111', 'http://example/connect/111111');
       return { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' };
     });
     await runConnectCommand({
       _runPairFlow: fakePairFlow,
-      _WSClient: MockWSClient as any,
-      _HeartbeatLoop: MockHeartbeatLoop as any,
-      _open: fakeOpen as any,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
+      _open: fakeOpen,
       _stdout: stdout,
     });
     // Wait a tick for the floating promise inside onCode
@@ -157,7 +164,7 @@ describe('runConnectCommand', () => {
 
     // Override keychain mock for this single test
     const { loadDeviceToken } = await import('../medal-connect/keychain.js');
-    (loadDeviceToken as any).mockImplementationOnce(() => null);
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockImplementationOnce(() => null);
 
     const stdout = vi.fn();
     const fakePairFlow = vi.fn(async () => ({
@@ -169,8 +176,10 @@ describe('runConnectCommand', () => {
       runConnectCommand({
         headless: true,
         _runPairFlow: fakePairFlow,
-        _WSClient: MockWSClient as any,
-        _HeartbeatLoop: MockHeartbeatLoop as any,
+        _WSClient:
+          MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+        _HeartbeatLoop:
+          MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
         _stdout: stdout,
       })
     ).rejects.toThrow(/keychain_lost_token/);
@@ -189,8 +198,9 @@ describe('runConnectCommand', () => {
     await runConnectCommand({
       headless: true,
       _runPairFlow: fakePairFlow,
-      _WSClient: MockWSClient as any,
-      _HeartbeatLoop: MockHeartbeatLoop as any,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
       _stdout: stdout,
     });
     expect(MockWSClient.instances[0].opts.url).toBe('wss://medal-connect.medal.social/ws/w');
