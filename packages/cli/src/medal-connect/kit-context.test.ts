@@ -93,7 +93,7 @@ describe('resolveKitContext.commitAndPush', () => {
     );
   });
 
-  it('passes --literal-pathspecs to git add so :(...) magic is disabled (Codex P1 sweep)', async () => {
+  it('passes --literal-pathspecs as a top-level git option before the add subcommand (Codex P1 sweep — git add does not accept --literal-pathspecs as a subcommand option)', async () => {
     const exec = fakeExec();
     const ctx = await resolveKitContext({
       kitConfigPath: join(dir, 'kit.config.json'),
@@ -101,9 +101,15 @@ describe('resolveKitContext.commitAndPush', () => {
       exec,
     });
     await ctx.commitAndPush('msg', ['modules/configuration.nix']);
-    const addCall = exec.calls.find((c) => c.cmd === 'git' && c.args[0] === 'add');
+    const addCall = exec.calls.find(
+      (c) => c.cmd === 'git' && c.args.includes('add') && c.args.includes('--literal-pathspecs')
+    );
     expect(addCall).toBeDefined();
-    expect(addCall?.args).toContain('--literal-pathspecs');
+    // Order matters: the global option must precede the subcommand.
+    const flagIdx = addCall?.args.indexOf('--literal-pathspecs') ?? -1;
+    const addIdx = addCall?.args.indexOf('add') ?? -1;
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(addIdx).toBeGreaterThan(flagIdx);
     expect(addCall?.args).toContain('modules/configuration.nix');
   });
 
@@ -126,7 +132,7 @@ describe('resolveKitContext.commitAndPush', () => {
       exec,
     });
     await ctx.commitAndPush('msg');
-    const addCall = exec.calls.find((c) => c.cmd === 'git' && c.args[0] === 'add');
+    const addCall = exec.calls.find((c) => c.cmd === 'git' && c.args.includes('add'));
     expect(addCall).toBeDefined();
     // The legacy fallback resolves to machines/m1.apps.json or apps/apps.json.
     const lastArg = addCall?.args[addCall.args.length - 1] ?? '';

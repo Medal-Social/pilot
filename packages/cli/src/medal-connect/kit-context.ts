@@ -185,15 +185,19 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       // the cloud sees a failed command instead of ok:true on a
       // half-applied edit (Codex P2 sweep).
       //
-      // `--literal-pathspecs` disables Git's pathspec magic (`:(glob)`,
-      // `:!exclude`, etc.) so a path that happens to contain `:(...)`
-      // characters (legal on Linux filenames) is staged as a literal
-      // filename rather than interpreted as a magic pathspec — which
-      // would otherwise let a remote `raw.write` patch with
-      // `:(glob)secrets/*` stage worktree files outside the file we
-      // actually wrote (Codex P1 sweep — stage raw-write paths as
-      // literal Git pathspecs).
-      const r1 = await exec.run('git', ['add', '--literal-pathspecs', '--', ...stagePaths], {
+      // `--literal-pathspecs` is a TOP-LEVEL git option (not a `git add`
+      // option), so it precedes the subcommand: `git
+      // --literal-pathspecs add -- <paths>`. The option disables Git's
+      // pathspec magic (`:(glob)`, `:!exclude`, etc.) so a path that
+      // happens to contain `:(...)` characters (legal on Linux
+      // filenames) is staged as a literal filename rather than
+      // interpreted as a magic pathspec — which would otherwise let a
+      // remote `raw.write` patch with `:(glob)secrets/*` stage worktree
+      // files outside the file we actually wrote (Codex P1 sweep —
+      // stage raw-write paths as literal Git pathspecs; Codex P1 follow-up
+      // — `git add --literal-pathspecs` errors with "unknown option",
+      // the flag MUST be top-level).
+      const r1 = await exec.run('git', ['--literal-pathspecs', 'add', '--', ...stagePaths], {
         cwd: kitRepoDir,
       });
       if (r1.code !== 0) {
