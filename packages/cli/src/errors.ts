@@ -38,6 +38,8 @@ export const errorCodes = {
   DISCONNECT_BAD_RESPONSE: 'DISCONNECT_BAD_RESPONSE',
   DISCONNECT_UNPAIR_FAILED: 'DISCONNECT_UNPAIR_FAILED',
   DISCONNECT_KEYCHAIN_DELETE_FAILED: 'DISCONNECT_KEYCHAIN_DELETE_FAILED',
+  CONNECT_KIT_CONFIG_NOT_FOUND: 'CONNECT_KIT_CONFIG_NOT_FOUND',
+  CONNECT_KIT_MACHINE_NOT_IN_CONFIG: 'CONNECT_KIT_MACHINE_NOT_IN_CONFIG',
 } as const;
 
 type ErrorCode = (typeof errorCodes)[keyof typeof errorCodes];
@@ -94,6 +96,10 @@ const userMessages: Record<ErrorCode, string> = {
   DISCONNECT_UNPAIR_FAILED: 'Could not unpair the device. Try again in a few seconds.',
   DISCONNECT_KEYCHAIN_DELETE_FAILED:
     'The server unpaired the device, but the local token could not be removed from the keychain. Check Keychain Access permissions and remove the entry manually.',
+  CONNECT_KIT_CONFIG_NOT_FOUND:
+    'No kit configuration was found for this machine. Run `pilot kit init` to set up kit before connecting.',
+  CONNECT_KIT_MACHINE_NOT_IN_CONFIG:
+    'This machine is not registered in your kit configuration. Add a `machines` entry for this device id and try again.',
 };
 
 export class PilotError extends Error {

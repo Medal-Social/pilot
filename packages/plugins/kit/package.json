@@ -7,6 +7,8 @@
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
+    "./medal-connect": "./dist/medal-connect/index.js",
+    "./commands/apps": "./dist/commands/apps.js",
     "./package.json": "./package.json"
   },
   "files": [
