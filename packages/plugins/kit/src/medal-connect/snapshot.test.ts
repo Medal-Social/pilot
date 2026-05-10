@@ -105,6 +105,86 @@ describe('kit snapshot', () => {
     }
   });
 
+  it('returns apps=[] when apps.json is malformed JSON', async () => {
+    writeFileSync(join(dir, 'machines', 'test.apps.json'), '{ not valid json');
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'test',
+      user: 'u',
+      machineType: 'darwin',
+    });
+    expect(s.apps).toEqual([]);
+  });
+
+  it('returns apps=[] when apps.json has casks: not-an-array', async () => {
+    writeFileSync(
+      join(dir, 'machines', 'test.apps.json'),
+      JSON.stringify({ casks: 'a-string', brews: [] })
+    );
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'test',
+      user: 'u',
+      machineType: 'darwin',
+    });
+    expect(s.apps).toEqual([]);
+  });
+
+  it('filters non-string entries from casks', async () => {
+    writeFileSync(
+      join(dir, 'machines', 'test.apps.json'),
+      JSON.stringify({ casks: ['valid', 123, null, { x: 1 }, 'also-valid'], brews: [] })
+    );
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'test',
+      user: 'u',
+      machineType: 'darwin',
+    });
+    expect(s.apps).toEqual(['also-valid', 'valid']);
+  });
+
+  it('returns minimal profile when machineType is unknown', async () => {
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'test',
+      user: 'u',
+      machineType: 'freebsd',
+    });
+    expect(s.profile).toBe('minimal');
+  });
+
+  it('ignores malformed last-rebuild.json', async () => {
+    const stateDir = join(dir, '.medal-connect');
+    mkdirSync(stateDir);
+    writeFileSync(join(stateDir, 'last-rebuild.json'), 'not json');
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'test',
+      user: 'u',
+      machineType: 'darwin',
+    });
+    expect(s.lastRebuildAt).toBeUndefined();
+    expect(s.lastRebuildOk).toBeUndefined();
+  });
+
+  it('ignores last-rebuild.json fields with wrong types', async () => {
+    const stateDir = join(dir, '.medal-connect');
+    mkdirSync(stateDir);
+    writeFileSync(
+      join(stateDir, 'last-rebuild.json'),
+      JSON.stringify({ at: 'not-a-number', ok: 'not-a-bool' })
+    );
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'test',
+      user: 'u',
+      machineType: 'darwin',
+    });
+    expect(s.lastRebuildAt).toBeUndefined();
+    expect(s.lastRebuildOk).toBeUndefined();
+  });
+
   it('round-trips lastRebuildAt + lastRebuildOk from a state file', async () => {
     const stateDir = join(dir, '.medal-connect');
     mkdirSync(stateDir);

@@ -54,6 +54,36 @@ describe('readGitState', () => {
     expect(r.behind).toBe(1);
   });
 
+  it('returns null head when the runner reports spawn_failed', async () => {
+    // Inject a runner that simulates the spawn error path on the first call
+    // (rev-parse HEAD).
+    const runner = async () => ({ code: 1, stdout: '', stderr: 'spawn_failed' });
+    const r = await readGitState(dir, runner);
+    expect(r.kitRepoHead).toBe(null);
+    expect(r.ahead).toBe(0);
+    expect(r.behind).toBe(0);
+  });
+
+  it('handles non-numeric ahead/behind output gracefully', async () => {
+    // First call returns a sha; second call returns nonsense.
+    let callCount = 0;
+    const runner = async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return {
+          code: 0,
+          stdout: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'NaN garbage', stderr: '' };
+    };
+    const r = await readGitState(dir, runner);
+    expect(r.kitRepoHead).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(r.ahead).toBe(0);
+    expect(r.behind).toBe(0);
+  });
+
   it('returns null head when path is not a git repo', async () => {
     const empty = mkdtempSync(join(tmpdir(), 'mc-git-empty-'));
     try {
