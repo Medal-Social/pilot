@@ -263,9 +263,25 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
     if (data.status === 'expired') throw new PilotError(errorCodes.CONNECT_PAIR_CODE_EXPIRED);
     if (data.status === 'not_found') throw new PilotError(errorCodes.CONNECT_PAIR_CODE_NOT_FOUND);
 
-    // 4. Unseal the token.
-    const sealed: SealedEnvelope = JSON.parse(data.sealedDeviceToken);
-    const token = await openSealed(sealed, cliKp.privateJwk);
+    // 4. Unseal the token. Both steps can fail when the cloud and CLI are
+    //    on incompatible Worker rollouts, the response was corrupted, or
+    //    the envelope is malformed JSON. The browser has already approved
+    //    the pair at this point, so a raw SyntaxError / crypto error here
+    //    would leave the server-side device paired with no usable local
+    //    token AND bypass the typed connect recovery path. Wrap both calls
+    //    and surface a typed CONNECT_PAIR_UNSEAL_FAILED so program.ts shows
+    //    the user a clear retry message (Codex P2 'Map malformed sealed
+    //    tokens before unsealing').
+    let token: string;
+    try {
+      const sealed: SealedEnvelope = JSON.parse(data.sealedDeviceToken);
+      token = await openSealed(sealed, cliKp.privateJwk);
+    } catch (e) {
+      throw new PilotError(
+        errorCodes.CONNECT_PAIR_UNSEAL_FAILED,
+        (e as Error).message ?? 'unseal failed'
+      );
+    }
 
     // 5. Persist in keychain. Map any throw (locked macOS keychain,
     //    unavailable Linux secret service, permission revoked) to the

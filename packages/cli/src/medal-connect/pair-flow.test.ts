@@ -620,6 +620,73 @@ describe('runPairFlow', () => {
     expect(storeDeviceToken).toHaveBeenCalledTimes(1);
   });
 
+  it('throws CONNECT_PAIR_UNSEAL_FAILED when sealedDeviceToken is malformed JSON (Codex P2)', async () => {
+    // The browser has already approved the pair at this point. A malformed
+    // envelope (e.g. cloud↔CLI version skew or corrupted response) must NOT
+    // crash the CLI with a raw SyntaxError; surface the typed error so the
+    // user sees a clear retry message instead.
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/medal-connect/pair'))
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          status: 'claimed',
+          sealedDeviceToken: 'not-json{{',
+          deviceId: 'd',
+          workspaceId: 'w',
+          doUrl: 'http://do',
+        }),
+        { status: 200 }
+      );
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_UNSEAL_FAILED,
+    });
+    expect(storeDeviceToken).not.toHaveBeenCalled();
+  });
+
+  it('throws CONNECT_PAIR_UNSEAL_FAILED when openSealed cannot decrypt (Codex P2)', async () => {
+    // Even with valid envelope JSON, decryption can fail when the
+    // ephemeral keys don't match (e.g. backend bug, replayed envelope).
+    // Map to the typed error rather than letting a raw crypto exception
+    // escape after the server has already paired the device.
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/medal-connect/pair'))
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          status: 'claimed',
+          // Valid JSON shape but won't decrypt — junk ciphertext + senderPubkeyJwk.
+          sealedDeviceToken: JSON.stringify({
+            ciphertext: 'aaaa',
+            iv: 'bbbb',
+            senderPubkeyJwk: { kty: 'EC', crv: 'P-256', x: 'aa', y: 'bb' },
+          }),
+          deviceId: 'd',
+          workspaceId: 'w',
+          doUrl: 'http://do',
+        }),
+        { status: 200 }
+      );
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_UNSEAL_FAILED,
+    });
+    expect(storeDeviceToken).not.toHaveBeenCalled();
+  });
+
   it('throws CONNECT_PAIR_TIMEOUT when polling never resolves', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))

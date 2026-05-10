@@ -29,6 +29,7 @@ export const errorCodes = {
   CONNECT_PAIR_CODE_EXPIRED: 'CONNECT_PAIR_CODE_EXPIRED',
   CONNECT_PAIR_CODE_NOT_FOUND: 'CONNECT_PAIR_CODE_NOT_FOUND',
   CONNECT_PAIR_TIMEOUT: 'CONNECT_PAIR_TIMEOUT',
+  CONNECT_PAIR_UNSEAL_FAILED: 'CONNECT_PAIR_UNSEAL_FAILED',
   CONNECT_KEYCHAIN_LOST_TOKEN: 'CONNECT_KEYCHAIN_LOST_TOKEN',
   CONNECT_KEYCHAIN_READ_FAILED: 'CONNECT_KEYCHAIN_READ_FAILED',
   CONNECT_REJECTED: 'CONNECT_REJECTED',
@@ -80,6 +81,8 @@ const userMessages: Record<ErrorCode, string> = {
   CONNECT_PAIR_CODE_NOT_FOUND:
     'Pair code not found. Run `pilot connect` again to get a fresh code.',
   CONNECT_PAIR_TIMEOUT: 'Pair flow timed out before approval. Run `pilot connect` again.',
+  CONNECT_PAIR_UNSEAL_FAILED:
+    'Could not decrypt the device token returned by Medal Social. The pairing was approved server-side; run `pilot connect` again to retry. If this keeps happening, check that your Pilot version matches the server.',
   CONNECT_KEYCHAIN_LOST_TOKEN:
     'Could not save the device token to your keychain. Check Keychain Access permissions and try again.',
   CONNECT_KEYCHAIN_READ_FAILED:
