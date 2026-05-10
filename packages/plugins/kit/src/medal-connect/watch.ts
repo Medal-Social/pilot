@@ -164,17 +164,46 @@ export function watchKit(
     // ignore
   }
 
-  // Fallback: also watch the parent of `.medal-connect` so we pick up the
-  // first write that creates the directory (snapshot's last-rebuild file).
-  const mcParent = dirname(join(ctx.kitRepoDir, '.medal-connect'));
-  try {
-    const w = watch(mcParent, { persistent: false }, (_event, filename) => {
-      if (filename === '.medal-connect') schedule();
-    });
-    w.on('error', () => undefined);
-    watchers.push(w);
-  } catch {
-    // ignore
+  // .medal-connect/last-rebuild.json watcher. The targets loop skips this
+  // when the directory doesn't exist yet (fresh kit repo). When that's the
+  // case we watch the parent for the directory's creation, then install
+  // the real file watcher so subsequent kit.rebuild commands emit kit.state
+  // events instead of silently overwriting the marker (Codex P2 sweep).
+  const mcDir = join(ctx.kitRepoDir, '.medal-connect');
+  let lastRebuildWatcher: FSWatcher | null = null;
+  const ensureLastRebuildWatcher = () => {
+    if (disposed || lastRebuildWatcher) return;
+    if (!existsSync(mcDir)) return;
+    try {
+      const w = watch(mcDir, { persistent: false }, (_event, filename) => {
+        if (filename === 'last-rebuild.json') schedule();
+      });
+      w.on('error', () => undefined);
+      lastRebuildWatcher = w;
+      watchers.push(w);
+    } catch {
+      // ignore — best effort.
+    }
+  };
+  // Wire it now if .medal-connect already exists. (The targets loop above
+  // also installs this when present, so this is mostly idempotent — duplicate
+  // watchers are harmless because each only schedules a debounced snapshot.)
+  ensureLastRebuildWatcher();
+  // Otherwise, watch the parent so we install the real watcher the moment
+  // `.medal-connect/` is created, then schedule the first snapshot.
+  if (!existsSync(mcDir)) {
+    const mcParent = dirname(mcDir);
+    try {
+      const w = watch(mcParent, { persistent: false }, (_event, filename) => {
+        if (filename !== '.medal-connect') return;
+        ensureLastRebuildWatcher();
+        schedule();
+      });
+      w.on('error', () => undefined);
+      watchers.push(w);
+    } catch {
+      // ignore
+    }
   }
 
   return {
