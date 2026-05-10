@@ -207,4 +207,47 @@ describe('runConnectCommand', () => {
     });
     expect(MockWSClient.instances[0].opts.url).toBe('wss://medal-connect.medal.social/ws/w');
   });
+
+  it('registers providers via the _providers seam and pushes their initial snapshot', async () => {
+    MockWSClient.instances = [];
+    MockHeartbeatLoop.instances = [];
+
+    const stdout = vi.fn();
+    const fakePairFlow = vi.fn(async () => ({
+      deviceId: 'd-x',
+      workspaceId: 'ws-x',
+      doUrl: 'http://do',
+    }));
+
+    const snapshotFn = vi.fn(async () => ({
+      profile: 'workstation',
+      kitRepoHead: 'sha-abc',
+      ahead: 0,
+      behind: 0,
+      apps: [],
+    }));
+    const provider = {
+      id: 'kit',
+      capabilities: () => [{ verb: 'rebuild' }],
+      snapshot: snapshotFn,
+      watch: () => ({ dispose: () => undefined }),
+      exec: vi.fn(async () => ({ status: 'ok' as const })),
+    };
+
+    await runConnectCommand({
+      headless: true,
+      _runPairFlow: fakePairFlow,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
+      _providers: async () => [
+        provider as unknown as import('../medal-connect/provider-types.js').MedalConnectProvider,
+      ],
+      _stdout: stdout,
+    });
+
+    // Initial snapshot pushed on connect.
+    await new Promise((r) => setImmediate(r));
+    expect(snapshotFn).toHaveBeenCalledOnce();
+  });
 });

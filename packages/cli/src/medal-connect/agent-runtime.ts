@@ -1,0 +1,156 @@
+// Copyright (c) Medal Social. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import { HeartbeatLoop } from './heartbeat.js';
+import type { Disposable, MedalConnectProvider, ProviderEvent } from './provider-types.js';
+import { WSClient } from './ws-client.js';
+
+export interface RunAgentRuntimeOpts {
+  paired: { deviceId: string; workspaceId: string; doUrl: string };
+  token: string;
+  providers: MedalConnectProvider[];
+  // Test seams:
+  _WSClient?: typeof WSClient;
+  _HeartbeatLoop?: typeof HeartbeatLoop;
+}
+
+export interface AgentRuntimeHandle {
+  onConnected(): void;
+  shutdown(): void;
+}
+
+interface CommandFrame {
+  type: 'command';
+  commandId: string;
+  kind: string;
+  args: Record<string, unknown>;
+}
+
+/**
+ * Wires a long-lived WebSocket session to a set of `MedalConnectProvider`s.
+ *
+ *  - Forwards each provider's watch events as `event` frames.
+ *  - Routes incoming `command` frames to the matching provider by namespace
+ *    prefix (`<id>.<verb>`); acks delivery and emits a `command_result` with
+ *    the provider's `ExecResult`.
+ *  - On `onConnected()` (called by the caller after the WS welcome), pushes
+ *    each provider's current snapshot as a `<id>.state` event so the cloud
+ *    sees authoritative state on every reconnect.
+ */
+export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentRuntimeHandle> {
+  const WSC = opts._WSClient ?? WSClient;
+  const HL = opts._HeartbeatLoop ?? HeartbeatLoop;
+
+  const wsUrl = `${opts.paired.doUrl.replace(/^http/, 'ws')}/ws/${opts.paired.workspaceId}`;
+  const watchers: Disposable[] = [];
+
+  // Forward declaration so the WSClient onCommand handler can call into it.
+  let send: ((frame: unknown) => boolean) | null = null;
+
+  const ws = new WSC({
+    url: wsUrl,
+    deviceId: opts.paired.deviceId,
+    token: opts.token,
+    onCommand: (cmd) => {
+      void handleCommand(cmd as CommandFrame);
+    },
+  });
+  ws.start();
+  // biome-ignore lint/suspicious/noExplicitAny: WSClient.send signature is internal-typed
+  send = (frame) => ws.send(frame as any);
+
+  const heartbeat = new HL(ws);
+  heartbeat.start();
+
+  // Wire each provider's watcher to forward kit.state (or any provider event)
+  // as an `event` frame. The provider emits `{ kind: 'state', snapshot }` for
+  // its own state and arbitrary `{ kind, payload }` for everything else.
+  for (const p of opts.providers) {
+    const sub = p.watch((event: ProviderEvent) => {
+      // ProviderEvent is a discriminated union: `{ kind: 'state', snapshot }`
+      // or `{ kind, payload }`. The non-state branch keys on `payload` so the
+      // narrowing is on `kind === 'state'`.
+      if (event.kind === 'state') {
+        send?.({
+          type: 'event',
+          kind: `${p.id}.state`,
+          payload: (event as { kind: 'state'; snapshot: Record<string, unknown> }).snapshot,
+        });
+      } else {
+        send?.({
+          type: 'event',
+          kind: event.kind,
+          payload: (event as { kind: string; payload: Record<string, unknown> }).payload,
+        });
+      }
+    });
+    watchers.push(sub);
+  }
+
+  async function handleCommand(cmd: CommandFrame): Promise<void> {
+    // Ack delivery first so the cloud can mark delivered_at.
+    send?.({ type: 'command_ack', commandId: cmd.commandId, received: true });
+
+    // Provider lookup by namespace prefix.
+    const providerId = cmd.kind.split('.')[0] ?? '';
+    const provider = opts.providers.find((p) => p.id === providerId);
+    if (!provider) {
+      send?.({
+        type: 'command_result',
+        commandId: cmd.commandId,
+        ok: false,
+        error: `no provider for kind: ${cmd.kind}`,
+      });
+      return;
+    }
+
+    // Lifecycle: started → result. The verb portion follows the provider id
+    // and a single dot (e.g. `kit.rebuild` → verb `rebuild`).
+    const verb = cmd.kind.slice(providerId.length + 1);
+    send?.({
+      type: 'event',
+      kind: `${providerId}.${verb}.started`,
+      payload: { commandId: cmd.commandId },
+    });
+
+    const r = await provider.exec({ kind: cmd.kind, args: cmd.args });
+    if (r.status === 'ok') {
+      send?.({
+        type: 'command_result',
+        commandId: cmd.commandId,
+        ok: true,
+        result: r.result ?? {},
+      });
+    } else if (r.status === 'failed') {
+      send?.({ type: 'command_result', commandId: cmd.commandId, ok: false, error: r.error });
+    } else {
+      // awaiting_user — v1.1 path; ack only.
+      send?.({ type: 'command_awaiting_user', commandId: cmd.commandId, prompt: r.prompt });
+    }
+  }
+
+  return {
+    onConnected() {
+      // Push initial snapshots for each provider.
+      for (const p of opts.providers) {
+        void p
+          .snapshot()
+          .then((snap) => {
+            send?.({ type: 'event', kind: `${p.id}.state`, payload: snap });
+          })
+          .catch(() => undefined);
+      }
+    },
+    shutdown() {
+      for (const w of watchers) {
+        try {
+          w.dispose();
+        } catch {
+          /* noop */
+        }
+      }
+      heartbeat.stop();
+      ws.close();
+    },
+  };
+}
