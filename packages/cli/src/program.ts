@@ -134,6 +134,19 @@ export function buildProgram(settings: PilotSettings = loadSettings()): Command 
       }
     });
 
+  program
+    .command('disconnect <deviceId>')
+    .description('Revoke this device from its Medal Social workspace')
+    .option('--api-base <url>', 'Override the Medal Social API base (default https://medal.social)')
+    .action(async (deviceId: string, rawOpts: { apiBase?: string }) => {
+      const { runDisconnect } = await import('./commands/disconnect.js');
+      try {
+        await runDisconnect(deviceId, rawOpts.apiBase);
+      } catch {
+        process.exit(1);
+      }
+    });
+
   const kitEnabled = settings.plugins['@medalsocial/kit']?.enabled !== false;
 
   if (kitEnabled) {

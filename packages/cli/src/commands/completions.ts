@@ -4,7 +4,7 @@
 import { errorCodes, PilotError } from '../errors.js';
 
 const BASH_COMPLETION = `_pilot_completions() {
-  local commands="admin completions connect crew down help kit plugins status training uninstall up update usage"
+  local commands="admin completions connect crew disconnect down help kit plugins status training uninstall up update usage"
   COMPREPLY=($(compgen -W "$commands" -- "\${COMP_WORDS[COMP_CWORD]}"))
 }
 complete -F _pilot_completions pilot
@@ -12,7 +12,7 @@ complete -F _pilot_completions pilot
 
 const ZSH_COMPLETION = `#compdef pilot
 _pilot() {
-  local commands=(admin completions connect crew down help kit plugins status training uninstall up update usage)
+  local commands=(admin completions connect crew disconnect down help kit plugins status training uninstall up update usage)
   _describe 'command' commands
 }
 compdef _pilot pilot
@@ -23,6 +23,7 @@ complete -c pilot -n '__fish_use_subcommand' -a admin -d 'Admin dashboard'
 complete -c pilot -n '__fish_use_subcommand' -a completions -d 'Shell completions'
 complete -c pilot -n '__fish_use_subcommand' -a connect -d 'Pair this machine with a Medal Social workspace'
 complete -c pilot -n '__fish_use_subcommand' -a crew -d 'Manage your AI crew'
+complete -c pilot -n '__fish_use_subcommand' -a disconnect -d 'Revoke this device from its Medal Social workspace'
 complete -c pilot -n '__fish_use_subcommand' -a down -d 'Remove a template'
 complete -c pilot -n '__fish_use_subcommand' -a help -d 'Show help'
 complete -c pilot -n '__fish_use_subcommand' -a kit -d 'Machine configuration & Nix management'
