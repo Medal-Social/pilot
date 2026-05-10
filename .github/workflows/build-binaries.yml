@@ -184,6 +184,12 @@ jobs:
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${REMOTE_REPO}.git" /tmp/homebrew-pilot
           cp homebrew-pilot/pilot.rb /tmp/homebrew-pilot/pilot.rb
           cp homebrew-pilot/README.md /tmp/homebrew-pilot/README.md
+          # Mirror the Casks/ directory so cask-only changes (e.g. medal-social
+          # desktop bumps) reach the public tap on the next pilot release sync.
+          if [ -d homebrew-pilot/Casks ]; then
+            mkdir -p /tmp/homebrew-pilot/Casks
+            rsync -a --delete homebrew-pilot/Casks/ /tmp/homebrew-pilot/Casks/
+          fi
           cd /tmp/homebrew-pilot
 
           # No formula changes (e.g. re-run for an unchanged release) → nothing
