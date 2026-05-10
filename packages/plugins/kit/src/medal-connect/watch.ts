@@ -115,19 +115,24 @@ export function watchKit(
   // HEAD watcher above still triggers `schedule()`, and the rewire happens
   // alongside (snapshot + rewatch).
   let branchWatcher: FSWatcher | null = null;
+  let upstreamWatcher: FSWatcher | null = null;
   let watchedBranchRef: string | null = null;
+  const closeWatcher = (w: FSWatcher | null) => {
+    if (!w) return;
+    try {
+      w.close();
+    } catch {
+      // ignore
+    }
+  };
   const rewireBranchRef = () => {
     if (disposed) return;
     const next = readBranchRef(ctx.kitRepoDir);
     if (!next || next.absPath === watchedBranchRef) return;
-    if (branchWatcher) {
-      try {
-        branchWatcher.close();
-      } catch {
-        // ignore
-      }
-      branchWatcher = null;
-    }
+    closeWatcher(branchWatcher);
+    closeWatcher(upstreamWatcher);
+    branchWatcher = null;
+    upstreamWatcher = null;
     try {
       const w = watch(
         dirname(next.absPath),
@@ -143,6 +148,28 @@ export function watchKit(
     } catch {
       // Branch ref dir may not exist yet (fresh clone before first commit).
       // Subsequent HEAD changes will retry.
+    }
+    // Also watch the upstream tracking ref so a `git push` that updates
+    // refs/remotes/origin/<branch> triggers a snapshot — without this,
+    // the post-push state (ahead 0) wouldn't reach the cloud until another
+    // watched file changed (Codex P2 sweep #9).
+    try {
+      const u = watch(
+        dirname(next.upstreamPath),
+        { persistent: false },
+        (_event, filename) => {
+          if (filename === basename(next.upstreamPath)) schedule();
+        }
+      );
+      u.on('error', () => undefined);
+      upstreamWatcher = u;
+      watchers.push(u);
+    } catch {
+      // refs/remotes/origin/<branch> doesn't exist on a fresh repo with
+      // no remote tracking yet. Subsequent first-push will create it; we
+      // can't pick that up incrementally without inotify on the parent
+      // tree, but the next agent reconnect or any other watched-file
+      // change reschedules a snapshot anyway.
     }
   };
   // Initial wire so existing branch state is watched immediately.
@@ -226,11 +253,19 @@ export function watchKit(
  *
  *   .git/HEAD → "ref: refs/heads/main\n"  → .git/refs/heads/main
  *
+ * Also computes the conventional upstream tracking ref path
+ * (.git/refs/remotes/origin/<branch>) so callers can watch push
+ * completion — `git push` updates that file, not the local branch ref or
+ * HEAD, so without watching it the snapshot's `ahead`/`behind` can stay
+ * stale after a long push (Codex P2 sweep #9).
+ *
  * Returns null when HEAD is detached, the file is missing, or the loose
  * ref isn't materialized (e.g. fully packed). Caller still watches HEAD,
  * so a future branch-switch is picked up regardless.
  */
-function readBranchRef(repoDir: string): { absPath: string } | null {
+function readBranchRef(
+  repoDir: string
+): { absPath: string; upstreamPath: string } | null {
   const headPath = join(repoDir, '.git', 'HEAD');
   if (!existsSync(headPath)) return null;
   let content: string;
@@ -244,5 +279,12 @@ function readBranchRef(repoDir: string): { absPath: string } | null {
   const refRel = match[1];
   if (!refRel) return null;
   const absPath = join(repoDir, '.git', refRel);
-  return { absPath };
+  // Convention: refs/heads/<branch> → refs/remotes/origin/<branch>. Custom
+  // remotes won't match this exactly, but origin is the dominant case for
+  // kit; the snapshot's git CLI calls fall back to `@{upstream}` semantics
+  // regardless, so a missing watcher just delays the refresh until another
+  // watched file changes.
+  const branchName = refRel.replace(/^refs\/heads\//, '');
+  const upstreamPath = join(repoDir, '.git', 'refs', 'remotes', 'origin', branchName);
+  return { absPath, upstreamPath };
 }
