@@ -1,7 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -136,6 +136,38 @@ describe('applyKitPatch', () => {
       ops: [{ kind: 'raw.write', path: 'modules/../../etc/evil', content: 'x' }],
     };
     await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(/escape/);
+  });
+
+  it('refuses raw.write that targets an existing symlink (would follow & redirect)', async () => {
+    // Plant a symlink that pretends to be a regular .nix file but actually
+    // points outside the repo. Without the symlink guard, writeFileSync
+    // would follow the link and overwrite `/tmp/<x>/redirected-target`.
+    const realTarget = mkdtempSync(join(tmpdir(), 'redirect-'));
+    writeFileSync(join(realTarget, 'redirected'), 'original');
+    mkdirSync(join(dir, 'modules'));
+    symlinkSync(join(realTarget, 'redirected'), join(dir, 'modules', 'symlinked.nix'));
+
+    const patch: KitPatch = {
+      ops: [{ kind: 'raw.write', path: 'modules/symlinked.nix', content: 'pwn' }],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /symlink/i
+    );
+    // Verify the redirect target was NOT overwritten.
+    expect(readFileSync(join(realTarget, 'redirected'), 'utf8')).toBe('original');
+    rmSync(realTarget, { recursive: true, force: true });
+  });
+
+  it('refuses raw.write through a symlinked DIRECTORY ancestor', async () => {
+    const realDir = mkdtempSync(join(tmpdir(), 'redirect-dir-'));
+    symlinkSync(realDir, join(dir, 'evil-dir'));
+    const patch: KitPatch = {
+      ops: [{ kind: 'raw.write', path: 'evil-dir/inside.nix', content: 'pwn' }],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /symlink/i
+    );
+    rmSync(realDir, { recursive: true, force: true });
   });
 
   it('writes raw.write content for non-secret paths and reports the path', async () => {

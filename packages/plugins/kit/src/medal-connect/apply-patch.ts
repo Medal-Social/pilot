@@ -1,7 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { addApp, removeApp } from '../commands/apps.js';
 import { errorCodes, KitError } from '../errors.js';
@@ -45,6 +45,17 @@ const FORBIDDEN_FIRST_SEGMENTS = new Set(['secrets', '.git', '.medal-connect']);
  * absolute target path on success. Throws a `KitError` (or wrapped Error
  * for the spec-§11 secrets case so the cloud can pattern-match on
  * "secrets") on any guard failure.
+ *
+ * Rejects:
+ *   - empty / non-string paths
+ *   - absolute paths
+ *   - paths that resolve outside the repo (lexical traversal)
+ *   - paths whose first segment is forbidden (case-insensitive)
+ *   - paths whose target OR any ancestor inside the repo is a SYMLINK
+ *     (Codex P1 sweep #2 — without this guard, a kit repo containing
+ *     `modules/foo.nix → ../secrets/foo` would let `raw.write` bypass
+ *     both the secrets/* and traversal guards, since the lexical check
+ *     passes but `writeFileSync` follows the symlink).
  */
 function ensureSafePath(repoDir: string, relPath: string): string {
   if (typeof relPath !== 'string' || relPath.length === 0) {
@@ -69,6 +80,24 @@ function ensureSafePath(repoDir: string, relPath: string): string {
       throw new Error(`Medal Connect cannot edit secrets paths: ${relPath}`);
     }
     throw new Error(`Medal Connect cannot edit ${firstSegment} paths: ${relPath}`);
+  }
+  // Walk every existing ancestor inside the repo and reject if any is a
+  // symlink. We don't reject if a path simply doesn't exist yet (raw.write
+  // for a fresh file is the common case), only if a real component along
+  // the way is a symlink that could redirect the write.
+  const segments = rel.split(sep);
+  for (let i = 1; i <= segments.length; i++) {
+    const partial = resolve(normalizedRepoDir, ...segments.slice(0, i));
+    let stat;
+    try {
+      stat = lstatSync(partial);
+    } catch {
+      // Path component doesn't exist — fine; mkdirSync below will create it.
+      break;
+    }
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Medal Connect cannot write through symlinks: ${relPath}`);
+    }
   }
   return target;
 }
