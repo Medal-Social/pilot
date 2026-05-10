@@ -170,6 +170,91 @@ describe('WSClient', () => {
     expect(MockWS.instances).toHaveLength(1);
   });
 
+  it('does NOT reset backoff on open without a welcome (Codex P2)', async () => {
+    // A flapping endpoint accepts the TCP handshake (open fires) but the DO
+    // closes the socket before sending `welcome` (auth routing issue, deploy
+    // restart, etc.). If `reconnectAttempt` resets on `open`, the second
+    // close would schedule at base delay again — rapid retry forever. The
+    // fix only resets after a `welcome` frame arrives.
+    MockWS.instances = [];
+    const client = new WSClient({
+      url: 'ws://x',
+      deviceId: 'd1',
+      token: 'tok',
+      WebSocketCtor: MockWS as unknown as typeof WebSocket,
+      reconnectBaseMs: 10,
+      reconnectMaxMs: 10_000,
+    });
+    client.start();
+    // First cycle: open (no welcome) → close. Schedules a reconnect with
+    // delay = 10 * 2^0 = 10ms; reconnectAttempt advances to 1.
+    let ws = MockWS.instances[0];
+    ws.open();
+    ws.emit('close', 1006, Buffer.from(''));
+    const t1 = Date.now();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(MockWS.instances).toHaveLength(2);
+    // Second cycle: open (still no welcome) → close. With the bug this
+    // would reset to delay=10ms again. Without the bug, delay = 10*2^1 = 20ms;
+    // reconnectAttempt advances to 2 so the next delay is 40ms.
+    ws = MockWS.instances[1];
+    ws.open();
+    ws.emit('close', 1006, Buffer.from(''));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(MockWS.instances).toHaveLength(3);
+    ws = MockWS.instances[2];
+    ws.open();
+    ws.emit('close', 1006, Buffer.from(''));
+    // Third reconnect MUST take at least 40ms (10 * 2^2 = 40); without the
+    // fix it would land at ~10ms.
+    const before4 = Date.now();
+    await new Promise((r) => setTimeout(r, 30)); // not enough time
+    expect(MockWS.instances).toHaveLength(3);
+    await new Promise((r) => setTimeout(r, 30)); // total ~60ms — now it must have fired
+    expect(MockWS.instances).toHaveLength(4);
+    expect(Date.now() - before4).toBeGreaterThanOrEqual(35);
+    expect(Date.now() - t1).toBeGreaterThan(70);
+    client.close();
+  });
+
+  it('resets backoff after a welcome frame is received (Codex P2)', async () => {
+    // After a known-good session (welcome arrived) closes, the next
+    // reconnect should start at the base delay again — not stay at the
+    // accumulated exponential delay.
+    MockWS.instances = [];
+    const client = new WSClient({
+      url: 'ws://x',
+      deviceId: 'd1',
+      token: 'tok',
+      WebSocketCtor: MockWS as unknown as typeof WebSocket,
+      reconnectBaseMs: 10,
+      reconnectMaxMs: 10_000,
+    });
+    client.start();
+    // Simulate two flap cycles without welcome to bump the counter.
+    let ws = MockWS.instances[0];
+    ws.open();
+    ws.emit('close', 1006, Buffer.from(''));
+    await new Promise((r) => setTimeout(r, 25));
+    ws = MockWS.instances[1];
+    ws.open();
+    ws.emit('close', 1006, Buffer.from(''));
+    await new Promise((r) => setTimeout(r, 35));
+    // Now a successful session: welcome arrives, then a clean close.
+    ws = MockWS.instances[2];
+    ws.open();
+    ws.receive({ type: 'welcome', rev: 1, queuedCommands: [] });
+    ws.emit('close', 1006, Buffer.from(''));
+    // Backoff has been reset to 0; next delay should be base (10ms), NOT
+    // 10 * 2^2 = 40ms. Use a generous upper bound to absorb event-loop
+    // jitter while still distinguishing 10ms from 40ms.
+    const before = Date.now();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(MockWS.instances.length).toBeGreaterThanOrEqual(4);
+    expect(Date.now() - before).toBeLessThan(35);
+    client.close();
+  });
+
   it('exponential backoff increases delay between reconnects', async () => {
     MockWS.instances = [];
     const client = new WSClient({

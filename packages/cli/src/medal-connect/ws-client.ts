@@ -67,7 +67,15 @@ export class WSClient {
     this.ws = ws;
 
     ws.on('open', () => {
-      this.reconnectAttempt = 0;
+      // Do NOT reset `reconnectAttempt` here. A successful TCP/WebSocket
+      // handshake does not yet mean the server has accepted us — the DO
+      // can still close the socket immediately for auth or routing
+      // reasons (see also the rejected branch below). If we reset on open,
+      // a flapping endpoint that accepts the handshake but always closes
+      // before sending `welcome` would retry once per `reconnectBaseMs`
+      // forever instead of backing off (Codex P2 'Reset reconnect backoff
+      // only after welcome'). The counter is reset in the `welcome` branch
+      // of the message handler instead.
       this.opts.onConnect?.();
       this.send({
         type: 'hello',
@@ -85,6 +93,12 @@ export class WSClient {
         return;
       }
       if (frame.type === 'welcome') {
+        // Only a `welcome` frame proves the server has fully accepted us:
+        // auth verified, session resumed, ready to deliver commands. Reset
+        // the backoff counter here so a transient close after a known-good
+        // session starts fresh, but a flapping endpoint that never reaches
+        // `welcome` continues to back off exponentially.
+        this.reconnectAttempt = 0;
         this.rev = frame.rev;
         this.opts.onWelcome?.(frame.rev, frame.queuedCommands);
       } else if (frame.type === 'rejected') {
