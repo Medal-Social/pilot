@@ -360,6 +360,46 @@ describe('runAgentRuntime', () => {
     handle.shutdown();
   });
 
+  it('forwards WS onRejected to the caller (so connect can exit)', async () => {
+    const provider = makeProvider();
+    // biome-ignore lint/suspicious/noExplicitAny: test seam
+    let onRejected: any;
+    const ClientCls = class {
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      static instances: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      sent: any[] = [];
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      constructor(public opts: { onRejected: any; onWelcome: any; onCommand: any }) {
+        onRejected = opts.onRejected;
+        ClientCls.instances.push(this);
+      }
+      start() {}
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      send(f: any) {
+        this.sent.push(f);
+        return true;
+      }
+      close() {}
+    };
+    const seen: string[] = [];
+    const handle = await runAgentRuntime({
+      paired: { deviceId: 'd', workspaceId: 'w', doUrl: 'http://do' },
+      token: 'tok',
+      providers: [provider],
+      onRejected: (reason) => {
+        seen.push(reason);
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _WSClient: ClientCls as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test seam
+      _HeartbeatLoop: MockHB as any,
+    });
+    onRejected('token_invalid');
+    expect(seen).toEqual(['token_invalid']);
+    handle.shutdown();
+  });
+
   it('shutdown stops heartbeat + closes WS + disposes provider watchers', async () => {
     const dispose = vi.fn();
     const provider = makeProvider({ watch: vi.fn(() => ({ dispose })) });

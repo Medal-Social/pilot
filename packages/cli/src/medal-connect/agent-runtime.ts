@@ -15,6 +15,14 @@ export interface RunAgentRuntimeOpts {
    * notice, queued-command notes). Defaults to a no-op so tests stay quiet.
    */
   out?: (s: string) => void;
+  /**
+   * Called when the WS server sends a `rejected` frame (token invalid,
+   * device revoked, or workspace locked). The runtime stops automatically
+   * (WSClient sets its closing flag), but the caller usually wants to
+   * surface this to the user and exit; production wires this to a stderr
+   * write + process.exit. Tests can spy.
+   */
+  onRejected?: (reason: string) => void;
   // Test seams:
   _WSClient?: typeof WSClient;
   _HeartbeatLoop?: typeof HeartbeatLoop;
@@ -83,6 +91,15 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
     url: wsUrl,
     deviceId: opts.paired.deviceId,
     token: opts.token,
+    onRejected: (reason) => {
+      // The DO refused this device's token (auth failure / revoked / locked
+      // workspace). WSClient has already flipped its own `closing` flag, so
+      // no reconnect will happen; the runtime forwards the reason to the
+      // caller, which is responsible for exiting with the appropriate
+      // PilotError. Without this, `pilot connect` would appear to hang
+      // after the server refused it (Codex P1 sweep).
+      opts.onRejected?.(reason);
+    },
     onWelcome: (rev, queuedCommands) => {
       out(`  Resumed at rev ${rev}\n`);
       // Per WSClient lifecycle: only after `welcome` is the socket fully

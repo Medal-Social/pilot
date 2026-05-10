@@ -15,8 +15,11 @@ beforeEach(() => {
   execSync('git init -q -b main && git config user.email t@t && git config user.name t', {
     cwd: dir,
   });
-  mkdirSync(join(dir, 'apps'));
-  writeFileSync(join(dir, 'apps', 'apps.json'), JSON.stringify({ casks: [], brews: [] }));
+  mkdirSync(join(dir, 'machines'));
+  writeFileSync(
+    join(dir, 'machines', 't.apps.json'),
+    JSON.stringify({ casks: [], brews: [] })
+  );
   writeFileSync(join(dir, 'README'), '#');
   execSync('git add . && git commit -q -m init', { cwd: dir });
 });
@@ -32,7 +35,7 @@ describe('watchKit', () => {
     const sub = watchKit(ctx, (e) => events.push(e), { debounceMs: 50 });
     try {
       writeFileSync(
-        join(dir, 'apps', 'apps.json'),
+        join(dir, 'machines', 't.apps.json'),
         JSON.stringify({ casks: ['spotify'], brews: [] })
       );
       await new Promise((r) => setTimeout(r, 300));
@@ -52,7 +55,7 @@ describe('watchKit', () => {
     try {
       for (let i = 0; i < 5; i++) {
         writeFileSync(
-          join(dir, 'apps', 'apps.json'),
+          join(dir, 'machines', 't.apps.json'),
           JSON.stringify({ casks: [`x${i}`], brews: [] })
         );
         await new Promise((r) => setTimeout(r, 10));
@@ -72,7 +75,7 @@ describe('watchKit', () => {
     const sub = watchKit(ctx, (e) => events.push(e), { debounceMs: 50 });
     sub.dispose();
     writeFileSync(
-      join(dir, 'apps', 'apps.json'),
+      join(dir, 'machines', 't.apps.json'),
       JSON.stringify({ casks: ['after-dispose'], brews: [] })
     );
     await new Promise((r) => setTimeout(r, 200));

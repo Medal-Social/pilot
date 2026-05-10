@@ -21,10 +21,12 @@ function gitInit(d: string) {
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'mc-snap-'));
   gitInit(dir);
-  // minimal kit repo shape
-  mkdirSync(join(dir, 'apps'));
+  // Canonical kit layout: machines/<machineId>.apps.json. The default test
+  // machineId is 'test' (matches the `machineId` arg used in the assertions
+  // below), so seed the file at that path.
+  mkdirSync(join(dir, 'machines'));
   writeFileSync(
-    join(dir, 'apps', 'apps.json'),
+    join(dir, 'machines', 'test.apps.json'),
     JSON.stringify({ casks: ['spotify', 'figma'], brews: [] })
   );
 });
@@ -60,8 +62,8 @@ describe('kit snapshot', () => {
     expect(s.profile).toBe('server');
   });
 
-  it('reports apps=[] when apps.json is missing', async () => {
-    rmSync(join(dir, 'apps', 'apps.json'));
+  it('reports apps=[] when no machine apps file or legacy file exists', async () => {
+    rmSync(join(dir, 'machines', 'test.apps.json'));
     const s = await snapshot({
       kitRepoDir: dir,
       machineId: 't',
@@ -69,6 +71,22 @@ describe('kit snapshot', () => {
       machineType: 'darwin',
     });
     expect(s.apps).toEqual([]);
+  });
+
+  it('falls back to the legacy apps/apps.json when no machine file exists', async () => {
+    rmSync(join(dir, 'machines', 'test.apps.json'));
+    mkdirSync(join(dir, 'apps'));
+    writeFileSync(
+      join(dir, 'apps', 'apps.json'),
+      JSON.stringify({ casks: ['legacy-app'], brews: [] })
+    );
+    const s = await snapshot({
+      kitRepoDir: dir,
+      machineId: 'unknown-machine',
+      user: 'u',
+      machineType: 'darwin',
+    });
+    expect(s.apps).toEqual(['legacy-app']);
   });
 
   it('reports kitRepoHead=null and apps=[] when kitRepoDir is not a git repo', async () => {

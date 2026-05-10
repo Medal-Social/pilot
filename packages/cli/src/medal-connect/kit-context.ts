@@ -1,8 +1,8 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { addApp, removeApp } from '@medalsocial/kit/commands/apps';
 import { errorCodes, PilotError } from '../errors.js';
 import { type Exec, realExec } from '../shell/exec.js';
@@ -91,6 +91,13 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     : dirname(kitConfigPath);
   const machineType = machine.type;
 
+  // Apps file is machine-scoped: machines/<machineId>.apps.json (kit's
+  // canonical layout, see commands/kit.ts machineFile()). Resolve once on
+  // setup so we don't keep re-walking the directory tree per command, and so
+  // commitAndPush can stage the file with a stable relative path.
+  const appsFile = resolveMachineAppsFile(kitRepoDir, opts.machineId);
+  const appsRelative = relative(kitRepoDir, appsFile);
+
   return {
     kitRepoDir,
     user: machine.user,
@@ -108,21 +115,69 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       };
     },
     addCask: async (cask) => {
-      await addApp(join(kitRepoDir, 'apps', 'apps.json'), cask, 'casks');
+      await addApp(appsFile, cask, 'casks');
     },
     removeCask: async (cask) => {
-      await removeApp(join(kitRepoDir, 'apps', 'apps.json'), cask, 'casks');
+      await removeApp(appsFile, cask, 'casks');
     },
     commitAndPush: async (message) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
-      const r1 = await exec.run('git', ['add', 'apps/apps.json'], { cwd: kitRepoDir });
+      const r1 = await exec.run('git', ['add', appsRelative], { cwd: kitRepoDir });
       if (r1.code !== 0) return; // nothing staged is fine
+      // `git commit` exits 1 when there is nothing to commit (no staged
+      // diff). That's a benign no-op for our flow — return silently.
       const r2 = await exec.run('git', ['commit', '-m', message], { cwd: kitRepoDir });
-      if (r2.code !== 0) return; // nothing to commit is fine
-      await exec.run('git', ['push'], { cwd: kitRepoDir });
+      if (r2.code !== 0) return;
+      // `git push` failures, however, MUST surface as command failures —
+      // otherwise execKit returns ok:true while the cloud's view of the
+      // kit repo diverges from every other machine that pulls from the
+      // remote (Codex P2 'Surface git push failures'). Throw so execKit's
+      // try/catch converts to status='failed'.
+      const r3 = await exec.run('git', ['push'], { cwd: kitRepoDir });
+      if (r3.code !== 0) {
+        const detail = r3.stderr.trim().slice(0, 500);
+        throw new Error(`git push failed: ${detail || `exit ${r3.code}`}`);
+      }
     },
   };
+}
+
+/**
+ * Locate the machine-specific apps file (`machines/<machine>.apps.json`),
+ * matching `pilot kit apps`'s `findMachineFile()` logic. Falls back to the
+ * conventional path so a missing file still yields a stable, informative
+ * write location for the first add.
+ */
+function resolveMachineAppsFile(repoDir: string, machineId: string): string {
+  const target = `${machineId}.apps.json`;
+  const found = findInDir(join(repoDir, 'machines'), target);
+  if (found) return found;
+  return join(repoDir, 'machines', target);
+}
+
+function findInDir(root: string, target: string): string | null {
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    const full = join(root, entry);
+    if (entry === target) return full;
+    let stat: ReturnType<typeof statSync>;
+    try {
+      stat = statSync(full);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      const nested = findInDir(full, target);
+      if (nested) return nested;
+    }
+  }
+  return null;
 }
 
 function resolveRepoDir(repoDir: string, configPath: string): string {

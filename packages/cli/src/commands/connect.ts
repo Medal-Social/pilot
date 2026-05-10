@@ -123,6 +123,16 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
     token: stored.token,
     providers,
     out,
+    onRejected: async (reason) => {
+      // Same UX as the pre-runtime path: write a clear stderr message with
+      // the structured PilotError code and exit non-zero so scripts can
+      // detect the failure. Without this, `pilot connect` would silently
+      // sit on a closed socket after the DO refused us (Codex P1 sweep).
+      const { PilotError, errorCodes } = await import('../errors.js');
+      const err = new PilotError(errorCodes.CONNECT_REJECTED, reason);
+      process.stderr.write(`Connect rejected [${err.code}]: ${err.message}\n`);
+      process.exit(1);
+    },
     _WSClient: opts._WSClient,
     _HeartbeatLoop: opts._HeartbeatLoop,
   });

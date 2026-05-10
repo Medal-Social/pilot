@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type FSWatcher, existsSync, watch } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { type SnapshotContext, snapshot } from './snapshot.js';
+import { basename, dirname, join } from 'node:path';
+import { resolveAppsFile, type SnapshotContext, snapshot } from './snapshot.js';
 
 export interface WatchOptions {
   /** Debounce window for coalescing rapid file changes. Default 500ms. */
@@ -37,11 +37,26 @@ export function watchKit(
 ): Disposable {
   const debounce = opts.debounceMs ?? 500;
 
+  // Watch the resolved machine-specific apps file (machines/<id>.apps.json),
+  // falling back to the legacy single-file location when no machine entry
+  // exists (`apps/apps.json`). Picking the file dynamically here means the
+  // watcher follows whichever file the snapshot reads — keeping cloud state
+  // consistent with what `pilot kit apps` mutates.
+  const appsFile = resolveAppsFile(ctx.kitRepoDir, ctx.machineId);
   const targets: Array<{ dir: string; file: string }> = [
-    { dir: join(ctx.kitRepoDir, 'apps'), file: 'apps.json' },
     { dir: join(ctx.kitRepoDir, '.git'), file: 'HEAD' },
     { dir: join(ctx.kitRepoDir, '.medal-connect'), file: 'last-rebuild.json' },
   ];
+  if (appsFile) {
+    targets.push({ dir: dirname(appsFile), file: basename(appsFile) });
+  } else {
+    // No apps file yet — watch the conventional machine path so the first
+    // creation triggers a snapshot refresh.
+    targets.push({
+      dir: join(ctx.kitRepoDir, 'machines'),
+      file: `${ctx.machineId}.apps.json`,
+    });
+  }
 
   let pending: NodeJS.Timeout | null = null;
   let disposed = false;
