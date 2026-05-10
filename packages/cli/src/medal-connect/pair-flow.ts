@@ -1,6 +1,7 @@
 import os from 'node:os';
-import { generateKeyPairJwk, openSealed, type SealedEnvelope } from './ecdh';
-import { storeDeviceToken } from './keychain';
+import { PilotError, errorCodes } from '../errors.js';
+import { generateKeyPairJwk, openSealed, type SealedEnvelope } from './ecdh.js';
+import { storeDeviceToken } from './keychain.js';
 
 const DEFAULT_API_BASE = 'https://medal.social';
 
@@ -49,7 +50,7 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
     body: JSON.stringify({ hostname, os: platform, pubkeyJwk: cliKp.publicJwk }),
   });
   if (!createRes.ok) {
-    throw new Error(`pair_create_failed: ${createRes.status}`);
+    throw new PilotError(errorCodes.CONNECT_PAIR_CREATE_FAILED, `HTTP ${createRes.status}`);
   }
   const { code, claimUrl } = (await createRes.json()) as { code: string; claimUrl: string };
   opts.onCode?.(code, claimUrl);
@@ -76,8 +77,8 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
           doUrl: string;
         };
     if (data.status === 'pending') continue;
-    if (data.status === 'expired') throw new Error('pair_code_expired');
-    if (data.status === 'not_found') throw new Error('pair_code_not_found');
+    if (data.status === 'expired') throw new PilotError(errorCodes.CONNECT_PAIR_CODE_EXPIRED);
+    if (data.status === 'not_found') throw new PilotError(errorCodes.CONNECT_PAIR_CODE_NOT_FOUND);
 
     // 4. Unseal the token.
     const sealed: SealedEnvelope = JSON.parse(data.sealedDeviceToken);
@@ -97,5 +98,5 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
       doUrl: data.doUrl,
     };
   }
-  throw new Error('pair_timeout');
+  throw new PilotError(errorCodes.CONNECT_PAIR_TIMEOUT);
 }

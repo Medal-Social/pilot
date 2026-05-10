@@ -1,4 +1,4 @@
-import type { WSClient } from './ws-client';
+import type { WSClient } from './ws-client.js';
 
 /**
  * Sends a heartbeat frame every 5 minutes (app-level liveness backstop).

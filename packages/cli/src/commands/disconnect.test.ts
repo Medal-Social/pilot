@@ -8,6 +8,7 @@ vi.mock('../medal-connect/keychain.js', () => ({
   deleteDeviceToken: vi.fn(() => true),
 }));
 
+import { PilotError, errorCodes } from '../errors.js';
 import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
 import { runDisconnectCommand } from './disconnect.js';
 
@@ -40,21 +41,23 @@ describe('runDisconnectCommand', () => {
     expect(out.mock.calls.map((c) => c[0]).join('')).toContain('Disconnected d1');
   });
 
-  it('throws no_keychain_record when keychain lookup is null', async () => {
+  it('throws DISCONNECT_NO_KEYCHAIN_RECORD when keychain lookup is null', async () => {
     (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
     const out = vi.fn();
     const err = vi.fn();
 
-    await expect(
-      runDisconnectCommand('missing', {
-        _fetch: vi.fn() as unknown as typeof fetch,
-        _stdout: out,
-        _stderr: err,
-      })
-    ).rejects.toThrow(/no_keychain_record/);
+    const promise = runDisconnectCommand('missing', {
+      _fetch: vi.fn() as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_NO_KEYCHAIN_RECORD,
+    });
   });
 
-  it('throws server_<status> on non-2xx', async () => {
+  it('throws DISCONNECT_SERVER_ERROR on non-2xx', async () => {
     (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       deviceId: 'd',
       workspaceId: 'w',
@@ -65,16 +68,18 @@ describe('runDisconnectCommand', () => {
     const out = vi.fn();
     const err = vi.fn();
 
-    await expect(
-      runDisconnectCommand('d', {
-        _fetch: fetchFn as unknown as typeof fetch,
-        _stdout: out,
-        _stderr: err,
-      })
-    ).rejects.toThrow(/server_500/);
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_SERVER_ERROR,
+    });
   });
 
-  it('throws unpair_auth when server returns ok:false reason:auth', async () => {
+  it('throws DISCONNECT_UNPAIR_FAILED when server returns ok:false reason:auth', async () => {
     (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       deviceId: 'd',
       workspaceId: 'w',
@@ -87,12 +92,37 @@ describe('runDisconnectCommand', () => {
     const out = vi.fn();
     const err = vi.fn();
 
-    await expect(
-      runDisconnectCommand('d', {
-        _fetch: fetchFn as unknown as typeof fetch,
-        _stdout: out,
-        _stderr: err,
-      })
-    ).rejects.toThrow(/unpair_auth/);
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_UNPAIR_FAILED,
+      cause: 'auth',
+    });
+  });
+
+  it('throws DISCONNECT_BAD_RESPONSE on non-JSON 2xx', async () => {
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      deviceId: 'd',
+      workspaceId: 'w',
+      doUrl: 'u',
+      token: 't',
+    });
+    const fetchFn = vi.fn(async () => new Response('not json', { status: 200 }));
+    const out = vi.fn();
+    const err = vi.fn();
+
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_BAD_RESPONSE,
+    });
   });
 });

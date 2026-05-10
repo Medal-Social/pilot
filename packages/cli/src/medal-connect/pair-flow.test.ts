@@ -5,6 +5,7 @@ vi.mock('./keychain', () => ({
   storeDeviceToken: vi.fn(),
 }));
 
+import { PilotError, errorCodes } from '../errors.js';
 import { generateKeyPairJwk, sealForRecipient } from './ecdh';
 import { storeDeviceToken } from './keychain';
 import { runPairFlow } from './pair-flow';
@@ -71,46 +72,52 @@ describe('runPairFlow', () => {
     });
   });
 
-  it('throws pair_create_failed on non-2xx pair create', async () => {
+  it('throws CONNECT_PAIR_CREATE_FAILED on non-2xx pair create', async () => {
     const fetchFn = vi.fn(async () => new Response('boom', { status: 500 }));
-    await expect(
-      runPairFlow({
-        apiBase: 'http://x',
-        fetchFn: fetchFn as unknown as typeof fetch,
-        pollIntervalMs: 0,
-      })
-    ).rejects.toThrow(/pair_create_failed/);
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_CREATE_FAILED,
+    });
     expect(storeDeviceToken).not.toHaveBeenCalled();
   });
 
-  it('throws pair_code_expired on expired status', async () => {
+  it('throws CONNECT_PAIR_CODE_EXPIRED on expired status', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))
         return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
       return new Response(JSON.stringify({ status: 'expired' }), { status: 200 });
     });
-    await expect(
-      runPairFlow({
-        apiBase: 'http://x',
-        fetchFn: fetchFn as unknown as typeof fetch,
-        pollIntervalMs: 0,
-      })
-    ).rejects.toThrow(/expired/);
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_CODE_EXPIRED,
+    });
   });
 
-  it('throws pair_code_not_found when code is gone', async () => {
+  it('throws CONNECT_PAIR_CODE_NOT_FOUND when code is gone', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))
         return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
       return new Response(JSON.stringify({ status: 'not_found' }), { status: 200 });
     });
-    await expect(
-      runPairFlow({
-        apiBase: 'http://x',
-        fetchFn: fetchFn as unknown as typeof fetch,
-        pollIntervalMs: 0,
-      })
-    ).rejects.toThrow(/not_found/);
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_CODE_NOT_FOUND,
+    });
   });
 
   it('retries on transient poll errors (non-2xx) and eventually succeeds', async () => {
@@ -157,19 +164,21 @@ describe('runPairFlow', () => {
     expect(pollCount).toBeGreaterThanOrEqual(2);
   });
 
-  it('throws pair_timeout when polling never resolves', async () => {
+  it('throws CONNECT_PAIR_TIMEOUT when polling never resolves', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))
         return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
       return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
     });
-    await expect(
-      runPairFlow({
-        apiBase: 'http://x',
-        fetchFn: fetchFn as unknown as typeof fetch,
-        pollIntervalMs: 1,
-        timeoutMs: 50,
-      })
-    ).rejects.toThrow(/timeout/);
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 1,
+      timeoutMs: 50,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_PAIR_TIMEOUT,
+    });
   });
 });

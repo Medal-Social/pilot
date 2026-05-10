@@ -1,6 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { PilotError, errorCodes } from '../errors.js';
 import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
 
 const DEFAULT_API_BASE = 'https://medal.social';
@@ -19,13 +20,11 @@ export async function runDisconnectCommand(
 ): Promise<void> {
   const fetchFn = opts._fetch ?? fetch;
   const out = opts._stdout ?? ((s: string) => process.stdout.write(s));
-  const err = opts._stderr ?? ((s: string) => process.stderr.write(s));
   const apiBase = opts.apiBase ?? DEFAULT_API_BASE;
 
   const stored = loadDeviceToken(deviceId);
   if (!stored) {
-    err(`No keychain record for ${deviceId}\n`);
-    throw new Error('no_keychain_record');
+    throw new PilotError(errorCodes.DISCONNECT_NO_KEYCHAIN_RECORD, deviceId);
   }
 
   const res = await fetchFn(`${apiBase}/api/medal-connect/unpair`, {
@@ -35,14 +34,20 @@ export async function runDisconnectCommand(
   });
 
   if (!res.ok) {
-    err(`Server rejected unpair: ${res.status}\n`);
-    throw new Error(`server_${res.status}`);
+    throw new PilotError(errorCodes.DISCONNECT_SERVER_ERROR, `HTTP ${res.status}`);
   }
 
-  const data = (await res.json()) as { ok: boolean; reason?: string };
+  // Parse defensively — a 2xx with non-JSON body should not become a raw
+  // SyntaxError stack trace at the top level. Map to a typed PilotError.
+  let data: { ok?: boolean; reason?: string };
+  try {
+    data = (await res.json()) as { ok?: boolean; reason?: string };
+  } catch (e) {
+    throw new PilotError(errorCodes.DISCONNECT_BAD_RESPONSE, (e as Error).message);
+  }
+
   if (!data.ok) {
-    err(`Unpair failed: ${data.reason ?? 'unknown'}\n`);
-    throw new Error(`unpair_${data.reason ?? 'unknown'}`);
+    throw new PilotError(errorCodes.DISCONNECT_UNPAIR_FAILED, data.reason);
   }
 
   deleteDeviceToken(deviceId);

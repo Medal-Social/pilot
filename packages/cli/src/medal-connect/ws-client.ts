@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
-import type { AgentFrame, ServerFrame } from './frames';
-import { parseServerFrame } from './frames';
+import type { AgentFrame, ServerFrame } from './frames.js';
+import { parseServerFrame } from './frames.js';
 
 type WelcomeFrame = Extract<ServerFrame, { type: 'welcome' }>;
 type CommandFrame = Extract<ServerFrame, { type: 'command' }>;
