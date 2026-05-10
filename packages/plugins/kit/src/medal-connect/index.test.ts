@@ -18,6 +18,7 @@ describe('createKitProvider', () => {
       addCask: async () => undefined,
       removeCask: async () => undefined,
       commitAndPush: async () => undefined,
+      resolveAppsFile: () => '/tmp/apps.json',
     });
     expect(p.id).toBe('kit');
     const caps = p.capabilities();
@@ -36,6 +37,7 @@ describe('createKitProvider', () => {
       addCask: async () => undefined,
       removeCask: async () => undefined,
       commitAndPush: async () => undefined,
+      resolveAppsFile: () => '/tmp/apps.json',
     });
     const r = await p.exec({ kind: 'kit.rebuild', args: {} });
     expect(r.status).toBe('ok');
@@ -63,6 +65,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const r = await p.exec({ kind: 'kit.rebuild', args: {} });
       expect(r.status).toBe('ok');
@@ -83,6 +86,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const r = await p.exec({ kind: 'kit.rebuild', args: {} });
       expect(r.status).toBe('failed');
@@ -105,6 +109,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const snap = await p.snapshot();
       expect(snap).toMatchObject({
@@ -131,6 +136,7 @@ describe('createKitProvider', () => {
         addCask: async () => undefined,
         removeCask: async () => undefined,
         commitAndPush: async () => undefined,
+        resolveAppsFile: () => '/tmp/apps.json',
       });
       const sub = p.watch(() => undefined);
       expect(typeof sub.dispose).toBe('function');

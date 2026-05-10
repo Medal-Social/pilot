@@ -15,7 +15,7 @@ function makeDeps(over: Partial<ExecDeps> = {}): ExecDeps {
     removeCask: vi.fn(async () => undefined),
     persistLastRebuild: vi.fn(async () => undefined),
     commitAndPush: vi.fn(async () => undefined),
-    applyPatch: vi.fn(async () => undefined),
+    applyPatch: vi.fn(async () => [] as readonly string[]),
     ...over,
   };
 }
@@ -79,8 +79,8 @@ describe('execKit', () => {
 });
 
 describe('execKit kit.apply-patch-and-rebuild', () => {
-  it('applies patch, commits + pushes, runs rebuild, persists last rebuild', async () => {
-    const applyPatch = vi.fn(async () => undefined);
+  it('applies patch, commits + pushes mutated paths, runs rebuild, persists last rebuild', async () => {
+    const applyPatch = vi.fn(async () => ['machines/host.apps.json'] as readonly string[]);
     const deps = makeDeps({ applyPatch });
     const cmd = {
       kind: 'kit.apply-patch-and-rebuild',
@@ -92,9 +92,41 @@ describe('execKit kit.apply-patch-and-rebuild', () => {
     const r = await execKit(cmd, ctx(), deps);
     expect(r.status).toBe('ok');
     expect(applyPatch).toHaveBeenCalledWith('/tmp/kit', cmd.args.patch);
-    expect(deps.commitAndPush).toHaveBeenCalledWith('connect: add spotify');
+    // commitAndPush MUST receive the mutated paths so raw.write outputs are
+    // never left unstaged (Codex P1 + Qodo P0 sweep #1).
+    expect(deps.commitAndPush).toHaveBeenCalledWith('connect: add spotify', [
+      'machines/host.apps.json',
+    ]);
     expect(deps.runRebuild).toHaveBeenCalledOnce();
     expect(deps.persistLastRebuild).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+  });
+
+  it('passes raw.write paths through to commitAndPush so they get staged', async () => {
+    const applyPatch = vi.fn(
+      async () => ['machines/host.apps.json', 'modules/x.nix'] as readonly string[]
+    );
+    const deps = makeDeps({ applyPatch });
+    const r = await execKit(
+      {
+        kind: 'kit.apply-patch-and-rebuild',
+        args: {
+          patch: {
+            ops: [
+              { kind: 'cask.add', cask: 'spotify' },
+              { kind: 'raw.write', path: 'modules/x.nix', content: '{}' },
+            ],
+          },
+          message: 'connect: change',
+        },
+      },
+      ctx(),
+      deps
+    );
+    expect(r.status).toBe('ok');
+    expect(deps.commitAndPush).toHaveBeenCalledWith('connect: change', [
+      'machines/host.apps.json',
+      'modules/x.nix',
+    ]);
   });
 
   it('returns failed if applyPatch throws (no commit, no rebuild)', async () => {

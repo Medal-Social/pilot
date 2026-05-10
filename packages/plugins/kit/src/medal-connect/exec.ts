@@ -33,8 +33,22 @@ export interface ExecDeps {
   addCask: (cask: string) => Promise<void>;
   removeCask: (cask: string) => Promise<void>;
   persistLastRebuild: (state: { at: number; ok: boolean }) => Promise<void>;
-  commitAndPush: (message: string) => Promise<void>;
-  applyPatch: (repoDir: string, patch: KitPatch) => Promise<void>;
+  /**
+   * Stage + commit + push. The optional `paths` arg, when provided, is the
+   * list of repo-relative files to `git add` before commit. The legacy
+   * call with no paths preserves the cask.add / cask.remove flow which
+   * relies on commitAndPush's internal apps-file resolution. The new
+   * `apply-patch-and-rebuild` flow always passes the mutated paths returned
+   * by `applyPatch` so raw.write outputs are never left unstaged.
+   */
+  commitAndPush: (message: string, paths?: readonly string[]) => Promise<void>;
+  /**
+   * Apply a structured patch to disk. Returns the list of repo-relative
+   * paths that were mutated so the caller can stage them. The kit-context
+   * implementation resolves the machine apps file dynamically and passes
+   * it through to `applyKitPatch` via `appsFilePath`.
+   */
+  applyPatch: (repoDir: string, patch: KitPatch) => Promise<readonly string[]>;
 }
 
 export async function execKit(
@@ -86,9 +100,10 @@ export async function execKit(
     if (typeof message !== 'string' || message.length === 0) {
       return { status: 'failed', error: 'missing or invalid message arg' };
     }
+    let mutatedPaths: readonly string[];
     try {
-      await deps.applyPatch(_ctx.kitRepoDir, patchArg);
-      await deps.commitAndPush(message);
+      mutatedPaths = await deps.applyPatch(_ctx.kitRepoDir, patchArg);
+      await deps.commitAndPush(message, mutatedPaths);
     } catch (e) {
       return { status: 'failed', error: e instanceof Error ? e.message : String(e) };
     }

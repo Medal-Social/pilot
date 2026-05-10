@@ -14,7 +14,21 @@ export interface KitContext {
   runRebuild: () => Promise<{ ok: boolean; durationMs: number; error?: string }>;
   addCask: (cask: string) => Promise<void>;
   removeCask: (cask: string) => Promise<void>;
-  commitAndPush: (message: string) => Promise<void>;
+  /**
+   * Stage + commit + push. When `paths` is provided, those repo-relative
+   * files are explicitly `git add`-ed (used by the
+   * `kit.apply-patch-and-rebuild` flow which mutates raw `.nix` files in
+   * addition to the apps file). When omitted, falls back to staging only
+   * the resolved apps file (legacy `kit.cask.add` / `kit.cask.remove`
+   * flow).
+   */
+  commitAndPush: (message: string, paths?: readonly string[]) => Promise<void>;
+  /**
+   * Resolver for the machine-specific apps file path. The kit can migrate
+   * `apps/apps.json` → `machines/<machine>.apps.json` mid-session, so we
+   * re-resolve on each call.
+   */
+  resolveAppsFile: () => string;
 }
 
 export interface ResolveOptions {
@@ -147,18 +161,24 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
         if (!isDuplicateError(e)) throw e;
       }
     },
-    commitAndPush: async (message) => {
+    resolveAppsFile: currentAppsFile,
+    commitAndPush: async (message, paths) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
-      const appsRelative = relative(kitRepoDir, currentAppsFile());
+      // Default to staging only the resolved apps file when no explicit
+      // paths were given (cask.add / cask.remove path). When the
+      // apply-patch-and-rebuild flow passes mutated paths, stage exactly
+      // those — that's how raw.write outputs make it into the commit.
+      const stagePaths =
+        paths && paths.length > 0 ? Array.from(paths) : [relative(kitRepoDir, currentAppsFile())];
 
-      // `git add` is expected to succeed: the apps file definitely exists
-      // by the time we get here (addApp/removeApp wrote to it just now)
-      // and the path was resolved at setup time. Any non-zero exit is a
-      // real error (index lock, path validation, permissions) and MUST
-      // bubble up so the cloud sees a failed command instead of ok:true
-      // on a half-applied edit (Codex P2 sweep).
-      const r1 = await exec.run('git', ['add', appsRelative], { cwd: kitRepoDir });
+      // `git add` is expected to succeed: the path(s) were just written
+      // (or, for the apps-file fallback, the path was resolved at setup
+      // time and is known to exist). Any non-zero exit is a real error
+      // (index lock, path validation, permissions) and MUST bubble up so
+      // the cloud sees a failed command instead of ok:true on a
+      // half-applied edit (Codex P2 sweep).
+      const r1 = await exec.run('git', ['add', '--', ...stagePaths], { cwd: kitRepoDir });
       if (r1.code !== 0) {
         const detail = r1.stderr.trim().slice(0, 500);
         throw new Error(`git add failed: ${detail || `exit ${r1.code}`}`);
