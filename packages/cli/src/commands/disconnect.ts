@@ -50,7 +50,14 @@ export async function runDisconnectCommand(
     throw new PilotError(errorCodes.DISCONNECT_UNPAIR_FAILED, data.reason);
   }
 
-  deleteDeviceToken(deviceId);
+  // Server unpair succeeded; now delete the local keychain entry. If the OS
+  // refuses (locked keychain, permission revoked), surface a typed error
+  // instead of falsely reporting "Disconnected" while credentials remain on
+  // disk.
+  const deleted = deleteDeviceToken(deviceId);
+  if (!deleted) {
+    throw new PilotError(errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED, deviceId);
+  }
   out(`Disconnected ${deviceId}\n`);
 }
 

@@ -125,4 +125,32 @@ describe('runDisconnectCommand', () => {
       code: errorCodes.DISCONNECT_BAD_RESPONSE,
     });
   });
+
+  it('throws DISCONNECT_KEYCHAIN_DELETE_FAILED when keychain refuses deletion', async () => {
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      deviceId: 'd',
+      workspaceId: 'w',
+      doUrl: 'u',
+      token: 't',
+    });
+    // Override deleteDeviceToken to fail just for this test.
+    (deleteDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
+
+    const fetchFn = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
+    const out = vi.fn();
+    const err = vi.fn();
+
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED,
+    });
+    // Did NOT print "Disconnected" — that would be misleading since the
+    // local credential was not actually removed.
+    expect(out.mock.calls.map((c) => c[0]).join('')).not.toContain('Disconnected');
+  });
 });

@@ -34,6 +34,7 @@ export const errorCodes = {
   DISCONNECT_SERVER_ERROR: 'DISCONNECT_SERVER_ERROR',
   DISCONNECT_BAD_RESPONSE: 'DISCONNECT_BAD_RESPONSE',
   DISCONNECT_UNPAIR_FAILED: 'DISCONNECT_UNPAIR_FAILED',
+  DISCONNECT_KEYCHAIN_DELETE_FAILED: 'DISCONNECT_KEYCHAIN_DELETE_FAILED',
 } as const;
 
 type ErrorCode = (typeof errorCodes)[keyof typeof errorCodes];
@@ -82,6 +83,8 @@ const userMessages: Record<ErrorCode, string> = {
   DISCONNECT_SERVER_ERROR: 'The Medal Connect server rejected the unpair request.',
   DISCONNECT_BAD_RESPONSE: 'The Medal Connect server returned an unexpected response.',
   DISCONNECT_UNPAIR_FAILED: 'Could not unpair the device. Try again in a few seconds.',
+  DISCONNECT_KEYCHAIN_DELETE_FAILED:
+    'The server unpaired the device, but the local token could not be removed from the keychain. Check Keychain Access permissions and remove the entry manually.',
 };
 
 export class PilotError extends Error {
