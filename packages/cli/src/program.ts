@@ -114,6 +114,26 @@ export function buildProgram(settings: PilotSettings = loadSettings()): Command 
       await runAdmin();
     });
 
+  program
+    .command('connect')
+    .description('Pair this machine with a Medal Social workspace')
+    .option('--headless', 'Print code/URL only; do not open a browser')
+    .option('--workspace <slug>', 'Advisory workspace slug (user still confirms in browser)')
+    .option('--api-base <url>', 'Override the Medal Social API base (default https://medal.social)')
+    .action(async (rawOpts: { headless?: boolean; workspace?: string; apiBase?: string }) => {
+      const { runConnectCommand } = await import('./commands/connect.js');
+      try {
+        await runConnectCommand({
+          apiBase: rawOpts.apiBase,
+          headless: rawOpts.headless,
+          workspace: rawOpts.workspace,
+        });
+      } catch (e) {
+        process.stderr.write(`Connect failed: ${(e as Error).message}\n`);
+        process.exit(1);
+      }
+    });
+
   const kitEnabled = settings.plugins['@medalsocial/kit']?.enabled !== false;
 
   if (kitEnabled) {
