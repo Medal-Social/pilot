@@ -1,7 +1,7 @@
 // Copyright (c) Medal Social. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { type FSWatcher, existsSync, readFileSync, watch } from 'node:fs';
+import { existsSync, type FSWatcher, readFileSync, watch } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { resolveAppsFile, type SnapshotContext, snapshot } from './snapshot.js';
 
@@ -140,13 +140,9 @@ export function watchKit(
     branchWatcher = null;
     upstreamWatcher = null;
     try {
-      const w = watch(
-        dirname(next.absPath),
-        { persistent: false },
-        (_event, filename) => {
-          if (filename === basename(next.absPath)) schedule();
-        }
-      );
+      const w = watch(dirname(next.absPath), { persistent: false }, (_event, filename) => {
+        if (filename === basename(next.absPath)) schedule();
+      });
       w.on('error', () => undefined);
       branchWatcher = w;
       watchedBranchRef = next.absPath;
@@ -160,13 +156,9 @@ export function watchKit(
     // the post-push state (ahead 0) wouldn't reach the cloud until another
     // watched file changed (Codex P2 sweep #9).
     try {
-      const u = watch(
-        dirname(next.upstreamPath),
-        { persistent: false },
-        (_event, filename) => {
-          if (filename === basename(next.upstreamPath)) schedule();
-        }
-      );
+      const u = watch(dirname(next.upstreamPath), { persistent: false }, (_event, filename) => {
+        if (filename === basename(next.upstreamPath)) schedule();
+      });
       u.on('error', () => undefined);
       upstreamWatcher = u;
       watchers.push(u);
@@ -269,9 +261,7 @@ export function watchKit(
  * ref isn't materialized (e.g. fully packed). Caller still watches HEAD,
  * so a future branch-switch is picked up regardless.
  */
-function readBranchRef(
-  repoDir: string
-): { absPath: string; upstreamPath: string } | null {
+function readBranchRef(repoDir: string): { absPath: string; upstreamPath: string } | null {
   const headPath = join(repoDir, '.git', 'HEAD');
   if (!existsSync(headPath)) return null;
   let content: string;

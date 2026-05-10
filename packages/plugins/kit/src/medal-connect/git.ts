@@ -44,7 +44,10 @@ const defaultRun: GitRunner = (cmd, args, cwd) => {
   });
 };
 
-export async function readGitState(repoDir: string, runner: GitRunner = defaultRun): Promise<GitState> {
+export async function readGitState(
+  repoDir: string,
+  runner: GitRunner = defaultRun
+): Promise<GitState> {
   const run = runner;
   const head = await run('git', ['rev-parse', 'HEAD'], repoDir);
   if (head.code !== 0) {

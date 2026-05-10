@@ -15,7 +15,9 @@ describe('MedalConnectProvider type contract', () => {
   });
 
   it('snapshot returns a Promise<ProviderStateSnapshot>', () => {
-    expectTypeOf<MedalConnectProvider['snapshot']>().returns.resolves.toEqualTypeOf<ProviderStateSnapshot>();
+    expectTypeOf<
+      MedalConnectProvider['snapshot']
+    >().returns.resolves.toEqualTypeOf<ProviderStateSnapshot>();
   });
 
   it('watch takes an emit callback and returns Disposable', () => {

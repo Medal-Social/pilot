@@ -51,7 +51,9 @@ describe('resolveKitContext', () => {
       kitConfigPath: join(dir, 'kit.config.json'),
       machineId: 'unknown',
     });
-    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_KIT_MACHINE_NOT_IN_CONFIG });
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_KIT_MACHINE_NOT_IN_CONFIG,
+    });
   });
 
   it('throws CONNECT_KIT_CONFIG_NOT_FOUND when the kit config file is missing', async () => {

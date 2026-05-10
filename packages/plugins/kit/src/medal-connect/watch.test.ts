@@ -16,10 +16,7 @@ beforeEach(() => {
     cwd: dir,
   });
   mkdirSync(join(dir, 'machines'));
-  writeFileSync(
-    join(dir, 'machines', 't.apps.json'),
-    JSON.stringify({ casks: [], brews: [] })
-  );
+  writeFileSync(join(dir, 'machines', 't.apps.json'), JSON.stringify({ casks: [], brews: [] }));
   writeFileSync(join(dir, 'README'), '#');
   execSync('git add . && git commit -q -m init', { cwd: dir });
 });
