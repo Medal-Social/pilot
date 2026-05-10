@@ -79,6 +79,34 @@ describe('runDisconnectCommand', () => {
     });
   });
 
+  it('throws DISCONNECT_SERVER_ERROR when unpair fetch THROWS (Codex P2)', async () => {
+    // Network rejection (offline, DNS failure, TLS error, connection reset)
+    // before a Response exists must surface the typed disconnect error so
+    // users see the consistent failure path, not raw `fetch failed`.
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      deviceId: 'd',
+      workspaceId: 'w',
+      doUrl: 'u',
+      token: 't',
+    });
+    const fetchFn = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    const out = vi.fn();
+    const err = vi.fn();
+
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_SERVER_ERROR,
+    });
+    expect(out.mock.calls.map((c) => c[0]).join('')).not.toContain('Disconnected');
+  });
+
   it('throws DISCONNECT_UNPAIR_FAILED when server returns ok:false reason:auth', async () => {
     (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       deviceId: 'd',

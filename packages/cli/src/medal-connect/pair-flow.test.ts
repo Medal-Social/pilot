@@ -274,6 +274,36 @@ describe('runPairFlow', () => {
     expect(pollCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('passes a bounded AbortSignal to each poll request (Codex P2)', async () => {
+    // Each poll must be bounded by the remaining pair window so a stalled
+    // fetch (dead TCP, hung TLS) cannot prevent the loop from honoring
+    // timeoutMs. Verify by capturing the init.signal of every poll call.
+    const seenSignals: AbortSignal[] = [];
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/api/medal-connect/pair')) {
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        if (init.signal) seenSignals.push(init.signal);
+        return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
+      }
+      throw new Error('unexpected');
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 1,
+      timeoutMs: 30,
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_PAIR_TIMEOUT });
+    // At least one poll happened.
+    expect(seenSignals.length).toBeGreaterThanOrEqual(1);
+    // Every poll carried a signal — the fetch is bounded.
+    for (const sig of seenSignals) {
+      expect(sig).toBeInstanceOf(AbortSignal);
+    }
+  });
+
   it('throws CONNECT_PAIR_TIMEOUT when polling never resolves', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))

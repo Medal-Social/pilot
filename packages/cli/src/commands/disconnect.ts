@@ -27,11 +27,25 @@ export async function runDisconnectCommand(
     throw new PilotError(errorCodes.DISCONNECT_NO_KEYCHAIN_RECORD, deviceId);
   }
 
-  const res = await fetchFn(`${apiBase}/api/medal-connect/unpair`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceId, token: stored.token }),
-  });
+  // Wrap the unpair fetch the same way pair-flow wraps its requests: if the
+  // network rejects (offline, DNS failure, TLS error) before a Response
+  // exists, surface the same typed DISCONNECT_SERVER_ERROR with the
+  // underlying message as detail. Otherwise the rejection bubbles out as
+  // `Disconnect failed: fetch failed` and the user loses the consistent
+  // disconnect failure path (Codex P2).
+  let res: Response;
+  try {
+    res = await fetchFn(`${apiBase}/api/medal-connect/unpair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId, token: stored.token }),
+    });
+  } catch (e) {
+    throw new PilotError(
+      errorCodes.DISCONNECT_SERVER_ERROR,
+      (e as Error).message ?? 'network error'
+    );
+  }
 
   if (!res.ok) {
     throw new PilotError(errorCodes.DISCONNECT_SERVER_ERROR, `HTTP ${res.status}`);

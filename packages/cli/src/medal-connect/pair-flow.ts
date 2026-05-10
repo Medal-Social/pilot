@@ -95,18 +95,34 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
   // a new code, even though the original claim could still complete inside
   // `timeoutMs`. Treat fetch rejections the same as non-2xx responses:
   // continue retrying until the timeout window elapses (Codex P2).
+  //
+  // Each poll is also bounded by the remaining pair window via AbortController.
+  // Without the per-request abort, a stalled fetch (dead TCP, proxy that never
+  // returns a response, hung TLS handshake) can hang indefinitely without ever
+  // re-checking the loop's `Date.now() - start < timeoutMs` condition,
+  // breaking the advertised 5-minute pair window and the
+  // `CONNECT_PAIR_TIMEOUT` contract (Codex P2 'Bound each poll request by the
+  // pair timeout'). We abort the fetch the moment the pair window expires;
+  // the loop condition then exits and throws CONNECT_PAIR_TIMEOUT.
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, pollMs));
+    const remainingMs = timeoutMs - (Date.now() - start);
+    if (remainingMs <= 0) break;
+    const ac = new AbortController();
+    const abortTimer = setTimeout(() => ac.abort(), remainingMs);
     let pollRes: Response;
     try {
       pollRes = await fetchFn(`${apiBase}/api/medal-connect/pair/poll`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ code }),
+        signal: ac.signal,
       });
     } catch {
-      continue; // transient — keep polling until timeoutMs is reached
+      continue; // transient or aborted — loop condition decides next step
+    } finally {
+      clearTimeout(abortTimer);
     }
     if (!pollRes.ok) continue;
     const data = (await pollRes.json()) as
