@@ -224,6 +224,26 @@ describe('runPairFlow', () => {
     expect(storeDeviceToken).not.toHaveBeenCalled();
   });
 
+  it('passes a bounded AbortSignal to the pair-create request (Codex P2)', async () => {
+    // The single-shot pair-create must be bounded so a stalled connection
+    // (dead TCP, unresponsive proxy, hung TLS handshake) can't leave
+    // `pilot connect` sitting at "Connecting..." forever. Verify that the
+    // fetch init carries an AbortSignal.
+    let seenSignal: AbortSignal | undefined;
+    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.signal) seenSignal = init.signal;
+      return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+    });
+    const promise = runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 1,
+      timeoutMs: 30,
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_PAIR_TIMEOUT });
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+  });
+
   it('throws CONNECT_PAIR_CREATE_FAILED when pair-create fetch THROWS (Codex P2)', async () => {
     // Offline/DNS/TLS rejections during the single-shot pair-create must
     // surface the same typed PilotError as a non-2xx response — otherwise

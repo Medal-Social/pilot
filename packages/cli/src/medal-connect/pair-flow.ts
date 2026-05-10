@@ -86,18 +86,32 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
   // the command having a dedicated user-facing message that mentions the
   // network. Attach the underlying message as detail for support diagnostics
   // (Codex P2).
+  //
+  // Bound the request with an AbortController so a stalled connection (dead
+  // TCP, unresponsive proxy, hung TLS handshake) can't leave `pilot connect`
+  // sitting at "Connecting..." forever. The polling loop already enforces
+  // `timeoutMs` per poll; the create request gets the SAME budget so the
+  // total CONNECT_PAIR_CREATE_FAILED window is bounded by the pair window
+  // (the original timeoutMs is the user's full attention budget — once the
+  // create cannot complete inside it, the pair would be useless anyway)
+  // (Codex P2 'Bound the initial pair-create request').
+  const createAc = new AbortController();
+  const createAbortTimer = setTimeout(() => createAc.abort(), timeoutMs);
   let createRes: Response;
   try {
     createRes = await fetchFn(`${apiBase}/api/medal-connect/pair`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(createBody),
+      signal: createAc.signal,
     });
   } catch (e) {
     throw new PilotError(
       errorCodes.CONNECT_PAIR_CREATE_FAILED,
       (e as Error).message ?? 'network error'
     );
+  } finally {
+    clearTimeout(createAbortTimer);
   }
   if (!createRes.ok) {
     throw new PilotError(errorCodes.CONNECT_PAIR_CREATE_FAILED, `HTTP ${createRes.status}`);
