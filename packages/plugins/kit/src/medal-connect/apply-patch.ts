@@ -3,6 +3,7 @@
 
 import { lstatSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { HOMEBREW_NAME } from '../apps/schema.js';
 import { addApp, removeApp } from '../commands/apps.js';
 import { errorCodes, KitError } from '../errors.js';
 
@@ -140,6 +141,15 @@ export async function applyKitPatch(
     if (op.kind === 'cask.add' || op.kind === 'cask.remove') {
       if (typeof op.cask !== 'string' || op.cask.length === 0) {
         throw new Error(`invalid ${op.kind}: missing cask`);
+      }
+      // Mirror addApp's KIT_APPS_INVALID_NAME check up-front so a bad
+      // cask name late in the patch doesn't slip past preflight, leaving
+      // the kit repo dirty after an earlier op already wrote
+      // (Codex P2 sweep: cask name validation in preflight).
+      if (!HOMEBREW_NAME.test(op.cask)) {
+        throw new Error(
+          `invalid ${op.kind}: cask name must match Homebrew naming rules: ${op.cask}`
+        );
       }
     } else if (op.kind === 'raw.write') {
       if (typeof op.content !== 'string') {

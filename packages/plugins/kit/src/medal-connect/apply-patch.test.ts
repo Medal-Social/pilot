@@ -233,6 +233,25 @@ describe('applyKitPatch', () => {
     expect(() => readFileSync(join(dir, 'modules/legit.nix'), 'utf8')).toThrow();
   });
 
+  it('preflights cask name shape (HOMEBREW_NAME) — invalid name rejects whole patch', async () => {
+    // Earlier preflight only rejected empty strings; addApp would have
+    // thrown KIT_APPS_INVALID_NAME on a name like 'bad name' (with a
+    // space) AFTER the previous valid op had already mutated the apps
+    // file (Codex P2 sweep). Now preflight catches it.
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'cask.add', cask: 'spotify' },
+        { kind: 'cask.add', cask: 'bad name' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /homebrew|invalid/i
+    );
+    // Verify the apps file is unchanged from the seed (spotify NOT added).
+    const apps = JSON.parse(readFileSync(appsFile, 'utf8'));
+    expect(apps.casks).toEqual(['existing']);
+  });
+
   it('preflights cask ops too — bad cask name short-circuits before any disk write', async () => {
     mkdirSync(join(dir, 'modules'));
     const patch: KitPatch = {
