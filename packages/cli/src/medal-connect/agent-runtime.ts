@@ -73,6 +73,21 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
   // handler) but holds a forward reference to the WS client.
   let heartbeat: HeartbeatLoop | null = null;
 
+  // Sequential drain helper for welcome.queuedCommands (Codex P2). See the
+  // onWelcome comment for the rationale.
+  const drainQueue = async (
+    queued: ReadonlyArray<{ commandId: string; kind: string; args: Record<string, unknown> }>
+  ): Promise<void> => {
+    for (const q of queued) {
+      await handleCommand({
+        type: 'command',
+        commandId: q.commandId,
+        kind: q.kind,
+        args: q.args,
+      });
+    }
+  };
+
   // Initial-snapshot publisher. Called from `onWelcome` (so the socket is
   // proven OPEN) and exposed as `handle.onConnected()` for tests / out-of-band
   // refreshes. Each provider's snapshot is pushed as a `<id>.state` event.
@@ -108,14 +123,15 @@ export async function runAgentRuntime(opts: RunAgentRuntimeOpts): Promise<AgentR
       // we were offline.
       heartbeat?.kick();
       pushSnapshots();
-      for (const queued of queuedCommands ?? []) {
-        void handleCommand({
-          type: 'command',
-          commandId: queued.commandId,
-          kind: queued.kind,
-          args: queued.args,
-        });
-      }
+      // Drain the queue SEQUENTIALLY rather than firing all commands in
+      // parallel. v1 providers (kit) mutate shared state (the kit repo's git
+      // index, apps file, last-rebuild marker), so concurrent
+      // `git add`/`commit`/`push` would race on `index.lock` or interleave
+      // commits. Serializing here keeps the v1 provider boundary simple
+      // (each provider doesn't need its own mutex). Live commands (post-
+      // welcome `onCommand` frames) still run independently — the DO only
+      // delivers one at a time over the wire (Codex P2 sweep).
+      void drainQueue(queuedCommands ?? []);
     },
     onCommand: (cmd) => {
       void handleCommand(cmd as CommandFrame);

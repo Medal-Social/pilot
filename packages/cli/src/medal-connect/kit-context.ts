@@ -25,6 +25,14 @@ export interface ResolveOptions {
    * commands already use — no second source of truth.
    */
   kitConfigPath?: string;
+  /**
+   * The kit machine name. kit.config.json keys machines by friendly name
+   * (typically the hostname — `pilot kit` resolves them via `detectMachine`),
+   * NOT by the cloud-side opaque `deviceId`. The connect command should
+   * pass the local hostname here so existing kit configs work unmodified
+   * (Codex P1 sweep — without this, every paired machine would hit
+   * CONNECT_KIT_MACHINE_NOT_IN_CONFIG and run with zero providers).
+   */
   machineId: string;
   /**
    * Subprocess execution interface. Defaulted to `realExec` so production
@@ -123,17 +131,40 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     commitAndPush: async (message) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
+
+      // `git add` is expected to succeed: the apps file definitely exists
+      // by the time we get here (addApp/removeApp wrote to it just now)
+      // and the path was resolved at setup time. Any non-zero exit is a
+      // real error (index lock, path validation, permissions) and MUST
+      // bubble up so the cloud sees a failed command instead of ok:true
+      // on a half-applied edit (Codex P2 sweep).
       const r1 = await exec.run('git', ['add', appsRelative], { cwd: kitRepoDir });
-      if (r1.code !== 0) return; // nothing staged is fine
-      // `git commit` exits 1 when there is nothing to commit (no staged
-      // diff). That's a benign no-op for our flow — return silently.
+      if (r1.code !== 0) {
+        const detail = r1.stderr.trim().slice(0, 500);
+        throw new Error(`git add failed: ${detail || `exit ${r1.code}`}`);
+      }
+
+      // `git commit` exits 1 with the literal "nothing to commit" message
+      // when the working tree is clean. That's the only benign non-zero —
+      // hook failures, missing user.email, lock errors, etc. all surface
+      // here too with different messages, so check before swallowing.
       const r2 = await exec.run('git', ['commit', '-m', message], { cwd: kitRepoDir });
-      if (r2.code !== 0) return;
-      // `git push` failures, however, MUST surface as command failures —
-      // otherwise execKit returns ok:true while the cloud's view of the
-      // kit repo diverges from every other machine that pulls from the
-      // remote (Codex P2 'Surface git push failures'). Throw so execKit's
-      // try/catch converts to status='failed'.
+      if (r2.code !== 0) {
+        // `git commit` prints "nothing to commit" to STDOUT (not stderr) when
+        // the tree is clean — combine both streams to detect the no-op case.
+        const combined = `${r2.stdout || ''}\n${r2.stderr || ''}`.toLowerCase();
+        const isNoOp = /nothing to commit|no changes added/.test(combined);
+        if (!isNoOp) {
+          const detail = r2.stderr.trim().slice(0, 500);
+          throw new Error(`git commit failed: ${detail || `exit ${r2.code}`}`);
+        }
+        // No-op commit (no staged diff) — skip the push too; nothing to send.
+        return;
+      }
+
+      // `git push` failures MUST surface — otherwise execKit returns ok:true
+      // while the cloud's view of the kit repo diverges from every other
+      // machine that pulls from the remote.
       const r3 = await exec.run('git', ['push'], { cwd: kitRepoDir });
       if (r3.code !== 0) {
         const detail = r3.stderr.trim().slice(0, 500);
