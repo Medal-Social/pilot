@@ -403,6 +403,155 @@ describe('runPairFlow', () => {
     }
   });
 
+  it('treats malformed (non-JSON) poll 2xx responses as transient and keeps retrying (Codex P2)', async () => {
+    // A 2xx with a non-JSON body (captive portal / CDN HTML page) must NOT
+    // throw a raw SyntaxError or treat the response as claimed — the loop
+    // should continue until either a recognised status arrives or the pair
+    // window elapses. Verified by sending HTML on the first poll, then a
+    // valid claimed envelope on the second.
+    const cloudKp = await generateKeyPairJwk();
+    const TOKEN = 'd'.repeat(64);
+    let cliPubkey: JsonWebKey | null = null;
+    let pollCount = 0;
+    let sealedToken: string | null = null;
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        cliPubkey = body.pubkeyJwk;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        pollCount += 1;
+        if (pollCount === 1) {
+          // Captive-portal / CDN HTML response with 200 status.
+          return new Response('<!doctype html>oops', { status: 200 });
+        }
+        if (!sealedToken) {
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
+          sealedToken = JSON.stringify(sealed);
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'claimed',
+            sealedDeviceToken: sealedToken,
+            deviceId: 'd-html',
+            workspaceId: 'w',
+            doUrl: 'http://do',
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error('unexpected');
+    });
+    const result = await runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+      timeoutMs: 5_000,
+    });
+    expect(result.deviceId).toBe('d-html');
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('skips poll responses with unknown status (backend rollout) and keeps retrying (Codex P2)', async () => {
+    // If the backend introduces a new status the CLI doesn't recognise, the
+    // poll loop must NOT crash and must NOT mistake it for claimed. Skip the
+    // cycle and keep polling.
+    const cloudKp = await generateKeyPairJwk();
+    const TOKEN = 'e'.repeat(64);
+    let cliPubkey: JsonWebKey | null = null;
+    let pollCount = 0;
+    let sealedToken: string | null = null;
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        cliPubkey = body.pubkeyJwk;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        pollCount += 1;
+        if (pollCount === 1) {
+          return new Response(JSON.stringify({ status: 'rate_limited' }), { status: 200 });
+        }
+        if (!sealedToken) {
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
+          sealedToken = JSON.stringify(sealed);
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'claimed',
+            sealedDeviceToken: sealedToken,
+            deviceId: 'd-unknown',
+            workspaceId: 'w',
+            doUrl: 'http://do',
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error('unexpected');
+    });
+    const result = await runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+      timeoutMs: 5_000,
+    });
+    expect(result.deviceId).toBe('d-unknown');
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('skips claimed-but-incomplete poll responses (missing required fields) and keeps retrying (Codex P2)', async () => {
+    // A poll response that says claimed but is missing sealedDeviceToken /
+    // deviceId / workspaceId / doUrl must NOT be unsealed — the cast would
+    // pass undefined to JSON.parse and crash. Skip the cycle.
+    const cloudKp = await generateKeyPairJwk();
+    const TOKEN = 'f'.repeat(64);
+    let cliPubkey: JsonWebKey | null = null;
+    let pollCount = 0;
+    let sealedToken: string | null = null;
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        cliPubkey = body.pubkeyJwk;
+        return new Response(JSON.stringify({ code: 'c', claimUrl: 'u' }), { status: 200 });
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        pollCount += 1;
+        if (pollCount === 1) {
+          // Missing sealedDeviceToken / deviceId / workspaceId / doUrl.
+          return new Response(JSON.stringify({ status: 'claimed' }), { status: 200 });
+        }
+        if (!sealedToken) {
+          if (!cliPubkey) throw new Error('cliPubkey not set');
+          const sealed = await sealForRecipient(cliPubkey, cloudKp.privateJwk, TOKEN);
+          sealedToken = JSON.stringify(sealed);
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'claimed',
+            sealedDeviceToken: sealedToken,
+            deviceId: 'd-incomplete',
+            workspaceId: 'w',
+            doUrl: 'http://do',
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error('unexpected');
+    });
+    const result = await runPairFlow({
+      apiBase: 'http://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 0,
+      timeoutMs: 5_000,
+    });
+    expect(result.deviceId).toBe('d-incomplete');
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+    expect(storeDeviceToken).toHaveBeenCalledTimes(1);
+  });
+
   it('throws CONNECT_PAIR_TIMEOUT when polling never resolves', async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.endsWith('/api/medal-connect/pair'))

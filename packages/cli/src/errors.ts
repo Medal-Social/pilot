@@ -30,6 +30,7 @@ export const errorCodes = {
   CONNECT_PAIR_CODE_NOT_FOUND: 'CONNECT_PAIR_CODE_NOT_FOUND',
   CONNECT_PAIR_TIMEOUT: 'CONNECT_PAIR_TIMEOUT',
   CONNECT_KEYCHAIN_LOST_TOKEN: 'CONNECT_KEYCHAIN_LOST_TOKEN',
+  CONNECT_KEYCHAIN_READ_FAILED: 'CONNECT_KEYCHAIN_READ_FAILED',
   CONNECT_REJECTED: 'CONNECT_REJECTED',
   DISCONNECT_NO_KEYCHAIN_RECORD: 'DISCONNECT_NO_KEYCHAIN_RECORD',
   DISCONNECT_SERVER_ERROR: 'DISCONNECT_SERVER_ERROR',
@@ -81,6 +82,8 @@ const userMessages: Record<ErrorCode, string> = {
   CONNECT_PAIR_TIMEOUT: 'Pair flow timed out before approval. Run `pilot connect` again.',
   CONNECT_KEYCHAIN_LOST_TOKEN:
     'Could not save the device token to your keychain. Check Keychain Access permissions and try again.',
+  CONNECT_KEYCHAIN_READ_FAILED:
+    'Could not read the device token from your keychain. The keychain may be locked or unavailable — unlock it and try again.',
   CONNECT_REJECTED: 'The Medal Connect server rejected this device. Run `pilot connect` again.',
   DISCONNECT_NO_KEYCHAIN_RECORD: 'No paired device found in your keychain for that deviceId.',
   DISCONNECT_SERVER_ERROR: 'The Medal Connect server rejected the unpair request.',

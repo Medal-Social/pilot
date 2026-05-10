@@ -1,4 +1,5 @@
 import { Entry } from '@napi-rs/keyring';
+import { errorCodes, PilotError } from '../errors.js';
 
 const SERVICE = 'medal-connect';
 
@@ -19,11 +20,36 @@ export function storeDeviceToken(record: DeviceTokenRecord): void {
   entry(record.deviceId).setPassword(JSON.stringify(record));
 }
 
+/**
+ * Look up a stored device token.
+ *
+ * Returns `null` when the record genuinely does not exist (or is corrupted
+ * beyond JSON.parse) and throws a typed `CONNECT_KEYCHAIN_READ_FAILED`
+ * `PilotError` when the OS keychain itself rejects the read (locked, secret
+ * service unavailable, permission denied, etc.).
+ *
+ * Distinguishing the two matters for `pilot disconnect`: if the keychain is
+ * unreadable we must NOT collapse to `DISCONNECT_NO_KEYCHAIN_RECORD` and tell
+ * the user no device exists, because the local credential may still be on
+ * disk and the server-side pair is still active. The caller surfaces the
+ * read-failure error so the user unlocks the keychain and retries instead of
+ * silently bypassing the server unpair (Codex P2).
+ */
 export function loadDeviceToken(deviceId: string): DeviceTokenRecord | null {
   const e = entry(deviceId);
+  let raw: string | null;
   try {
-    const raw = e.getPassword();
-    if (!raw) return null;
+    raw = e.getPassword();
+  } catch (err) {
+    throw new PilotError(
+      errorCodes.CONNECT_KEYCHAIN_READ_FAILED,
+      (err as Error).message ?? 'keychain read failed'
+    );
+  }
+  if (!raw) return null;
+  // A corrupted record (not valid JSON) is treated as "no usable record" so
+  // the caller can re-pair; that is distinct from a keychain-level failure.
+  try {
     return JSON.parse(raw) as DeviceTokenRecord;
   } catch {
     return null;

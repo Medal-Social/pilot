@@ -175,7 +175,17 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
       clearTimeout(abortTimer);
     }
     if (!pollRes.ok) continue;
-    const data = (await pollRes.json()) as
+    // A 2xx poll response can still carry a non-JSON body (HTML error page
+    // from a captive portal / proxy / CDN edge), be missing the `status`
+    // field, or carry a status the CLI doesn't recognise (added in a backend
+    // rollout). An unchecked `await pollRes.json()` followed by a cast would
+    // either throw a raw SyntaxError that exits the loop and forces the user
+    // to restart, or fall through every status check and try to unseal an
+    // `undefined` sealedDeviceToken as if the pair were claimed. Treat any
+    // malformed-but-2xx response the same as a non-2xx response: log nothing,
+    // continue retrying until the pair window elapses (Codex P2 'Validate
+    // poll responses before treating them as claimed').
+    let data:
       | { status: 'pending' }
       | { status: 'expired' }
       | { status: 'not_found' }
@@ -186,6 +196,45 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
           workspaceId: string;
           doUrl: string;
         };
+    try {
+      const parsed = (await pollRes.json()) as unknown;
+      if (!parsed || typeof parsed !== 'object') {
+        continue;
+      }
+      const status = (parsed as { status?: unknown }).status;
+      if (status === 'pending' || status === 'expired' || status === 'not_found') {
+        data = { status } as
+          | { status: 'pending' }
+          | { status: 'expired' }
+          | { status: 'not_found' };
+      } else if (status === 'claimed') {
+        const obj = parsed as Record<string, unknown>;
+        if (
+          typeof obj.sealedDeviceToken !== 'string' ||
+          typeof obj.deviceId !== 'string' ||
+          typeof obj.workspaceId !== 'string' ||
+          typeof obj.doUrl !== 'string'
+        ) {
+          // Claimed shape is missing required fields; skip this poll cycle.
+          continue;
+        }
+        data = {
+          status: 'claimed',
+          sealedDeviceToken: obj.sealedDeviceToken,
+          deviceId: obj.deviceId,
+          workspaceId: obj.workspaceId,
+          doUrl: obj.doUrl,
+        };
+      } else {
+        // Unknown / new status — backend rollout. Skip; the loop's timeout
+        // (or a subsequent recognised status) decides the outcome.
+        continue;
+      }
+    } catch {
+      // JSON.parse failed (HTML/empty body). Treat the same as transient
+      // poll failure and keep retrying until the pair window elapses.
+      continue;
+    }
     if (data.status === 'pending') continue;
     if (data.status === 'expired') throw new PilotError(errorCodes.CONNECT_PAIR_CODE_EXPIRED);
     if (data.status === 'not_found') throw new PilotError(errorCodes.CONNECT_PAIR_CODE_NOT_FOUND);
