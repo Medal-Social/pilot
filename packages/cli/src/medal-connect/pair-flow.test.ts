@@ -72,6 +72,45 @@ describe('runPairFlow', () => {
     });
   });
 
+  it('forwards workspace slug into the pair-create body and the claim URL', async () => {
+    let createBody: Record<string, unknown> | null = null;
+    const onCode = vi.fn();
+    const fetchFn = vi.fn(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url.endsWith('/api/medal-connect/pair')) {
+        createBody = body;
+        return new Response(
+          JSON.stringify({ code: '424242', claimUrl: 'http://medal.social/connect/424242' }),
+          { status: 200 }
+        );
+      }
+      if (url.endsWith('/api/medal-connect/pair/poll')) {
+        // Stay pending forever; we don't care about the rest of the flow here.
+        return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const promise = runPairFlow({
+      apiBase: 'http://medal.social',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      pollIntervalMs: 1,
+      timeoutMs: 30,
+      workspace: 'acme-corp',
+      onCode,
+    });
+    await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_PAIR_TIMEOUT });
+
+    // The pair-create POST included the workspace slug.
+    expect(createBody).toMatchObject({ workspaceSlug: 'acme-corp' });
+    // The claim URL handed to the caller has the workspace slug appended as a
+    // query param so the browser /connect/<code> page can pre-select it.
+    expect(onCode).toHaveBeenCalledWith(
+      '424242',
+      'http://medal.social/connect/424242?workspace=acme-corp'
+    );
+  });
+
   it('throws CONNECT_PAIR_CREATE_FAILED on non-2xx pair create', async () => {
     const fetchFn = vi.fn(async () => new Response('boom', { status: 500 }));
     const promise = runPairFlow({

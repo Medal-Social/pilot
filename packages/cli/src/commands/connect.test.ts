@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from 'vitest';
+import { errorCodes, PilotError } from '../errors.js';
 import type { WSClientOptions } from '../medal-connect/ws-client.js';
 import { runConnectCommand } from './connect.js';
 
@@ -172,17 +173,18 @@ describe('runConnectCommand', () => {
       workspaceId: 'w',
       doUrl: 'http://do',
     }));
-    await expect(
-      runConnectCommand({
-        headless: true,
-        _runPairFlow: fakePairFlow,
-        _WSClient:
-          MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
-        _HeartbeatLoop:
-          MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
-        _stdout: stdout,
-      })
-    ).rejects.toThrow(/keychain_lost_token/);
+    const promise = runConnectCommand({
+      headless: true,
+      _runPairFlow: fakePairFlow,
+      _WSClient: MockWSClient as unknown as typeof import('../medal-connect/ws-client.js').WSClient,
+      _HeartbeatLoop:
+        MockHeartbeatLoop as unknown as typeof import('../medal-connect/heartbeat.js').HeartbeatLoop,
+      _stdout: stdout,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.CONNECT_KEYCHAIN_LOST_TOKEN,
+    });
   });
 
   it('translates http:// doUrl to ws:// for WSClient', async () => {

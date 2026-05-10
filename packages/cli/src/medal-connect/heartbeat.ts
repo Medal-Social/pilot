@@ -6,9 +6,12 @@ import type { WSClient } from './ws-client.js';
  * Per spec §4: CF protocol-level WS pings handle intra-window liveness; the
  * app-level heartbeat is a 5-minute backstop against half-open sockets.
  *
- * Emits one heartbeat immediately on start so the DO records `last_heartbeat_at`
- * promptly after hello — without it, the first beat would arrive 5 minutes later
- * and the DO's offline-detection would race against pair completion.
+ * Lifecycle:
+ *  - `start()` schedules the recurring tick but does NOT emit immediately;
+ *    the first send would race with the WebSocket `open` event and silently
+ *    return false (WSClient.send returns false until readyState === OPEN).
+ *  - Call `kick()` from the WS `onWelcome` callback to send the first beat
+ *    once the socket is fully ready. After that, the interval keeps firing.
  */
 export class HeartbeatLoop {
   private timer: NodeJS.Timeout | null = null;
@@ -20,8 +23,16 @@ export class HeartbeatLoop {
   ) {}
 
   start(): void {
-    this.tick();
     this.timer = setInterval(() => this.tick(), HeartbeatLoop.INTERVAL_MS);
+  }
+
+  /**
+   * Send one heartbeat immediately. Idempotent and safe to call before or
+   * after `start()`. Intended for the WS `onWelcome` callback so the DO
+   * records `last_heartbeat_at` promptly after the welcome frame.
+   */
+  kick(): void {
+    this.tick();
   }
 
   stop(): void {

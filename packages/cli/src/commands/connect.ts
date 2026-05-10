@@ -34,6 +34,7 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
 
   const result = await runPair({
     apiBase: opts.apiBase,
+    workspace: opts.workspace,
     onCode: (code: string, claimUrl: string) => {
       const formatted = `${code.slice(0, 3)}-${code.slice(3)}`;
       out(`\n  Code: ${formatted}\n`);
@@ -51,25 +52,37 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
   // Sanity-check the token landed in the keychain.
   const stored = loadDeviceToken(result.deviceId);
   if (!stored) {
-    throw new Error(`keychain_lost_token: ${result.deviceId}`);
+    const { PilotError, errorCodes } = await import('../errors.js');
+    throw new PilotError(errorCodes.CONNECT_KEYCHAIN_LOST_TOKEN, result.deviceId);
   }
 
   const wsUrl = `${result.doUrl.replace(/^http/, 'ws')}/ws/${result.workspaceId}`;
+  // Build a heartbeat that holds a forward reference to the WS client so we
+  // can `kick()` it from onWelcome (after readyState === OPEN). This avoids
+  // the Codex P2 race where heartbeat.start() ticks immediately while the
+  // socket is still CONNECTING and ws.send() returns false.
+  let heartbeat: HeartbeatLoop;
   const ws = new WSC({
     url: wsUrl,
     deviceId: result.deviceId,
     token: stored.token,
     onConnect: () => out('  WS connected\n'),
     onDisconnect: (code: number) => out(`  WS disconnected (${code})\n`),
-    onWelcome: (rev: number) => out(`  Resumed at rev ${rev}\n`),
-    onRejected: (reason: string) => {
+    onWelcome: (rev: number) => {
+      out(`  Resumed at rev ${rev}\n`);
+      heartbeat?.kick();
+    },
+    onRejected: async (reason: string) => {
+      const { PilotError, errorCodes } = await import('../errors.js');
       out(`  Rejected: ${reason}\n`);
+      const err = new PilotError(errorCodes.CONNECT_REJECTED, reason);
+      process.stderr.write(`Connect rejected [${err.code}]: ${err.message}\n`);
       process.exit(1);
     },
   });
   ws.start();
 
-  const heartbeat = new HL(ws);
+  heartbeat = new HL(ws);
   heartbeat.start();
 
   // Graceful shutdown on Ctrl-C / SIGTERM.

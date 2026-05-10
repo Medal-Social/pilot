@@ -11,6 +11,12 @@ export interface PairFlowOptions {
   onCode?: (code: string, claimUrl: string) => void;
   pollIntervalMs?: number;
   timeoutMs?: number;
+  /**
+   * Advisory workspace slug — forwarded to the pair-create API and the claim
+   * URL so the approval page can pre-select the workspace. The user still
+   * confirms (or overrides) in the browser.
+   */
+  workspace?: string;
 }
 
 export interface PairFlowResult {
@@ -44,16 +50,28 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
   // 2. Create the pair code.
   const hostname = os.hostname();
   const platform: 'darwin' | 'linux' = process.platform === 'darwin' ? 'darwin' : 'linux';
+  const createBody: Record<string, unknown> = {
+    hostname,
+    os: platform,
+    pubkeyJwk: cliKp.publicJwk,
+  };
+  if (opts.workspace) createBody.workspaceSlug = opts.workspace;
   const createRes = await fetchFn(`${apiBase}/api/medal-connect/pair`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ hostname, os: platform, pubkeyJwk: cliKp.publicJwk }),
+    body: JSON.stringify(createBody),
   });
   if (!createRes.ok) {
     throw new PilotError(errorCodes.CONNECT_PAIR_CREATE_FAILED, `HTTP ${createRes.status}`);
   }
   const { code, claimUrl } = (await createRes.json()) as { code: string; claimUrl: string };
-  opts.onCode?.(code, claimUrl);
+  // Append ?workspace=<slug> so the browser /connect/<code> page can
+  // pre-select the workspace selector. Cloud-side claimUrl already points at
+  // the right environment per MEDAL_CONNECT_PAIR_BASE_URL.
+  const finalClaimUrl = opts.workspace
+    ? `${claimUrl}?workspace=${encodeURIComponent(opts.workspace)}`
+    : claimUrl;
+  opts.onCode?.(code, finalClaimUrl);
 
   // 3. Poll until claimed / expired / timeout.
   const start = Date.now();
