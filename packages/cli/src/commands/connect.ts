@@ -62,16 +62,40 @@ export async function runConnectCommand(opts: ConnectOpts = {}): Promise<void> {
   // the Codex P2 race where heartbeat.start() ticks immediately while the
   // socket is still CONNECTING and ws.send() returns false.
   let heartbeat: HeartbeatLoop;
+
+  // Process a single command frame: log it, ack receipt, and (for the
+  // duration of v1) immediately fail it with `unknown_kind`. Real command
+  // execution lands in v1.1; what matters here is that v1 doesn't silently
+  // drop work — the cloud sees an ack and a result, and the queue advances
+  // instead of staying pending forever.
+  function processCommand(cmd: { commandId: string; kind: string; args: Record<string, unknown> }) {
+    out(`  Command: ${cmd.kind} (${cmd.commandId})\n`);
+    ws.send({ type: 'command_ack', commandId: cmd.commandId, received: true });
+    ws.send({
+      type: 'command_result',
+      commandId: cmd.commandId,
+      ok: false,
+      error: `unsupported_kind:${cmd.kind}`,
+    });
+  }
+
   const ws = new WSC({
     url: wsUrl,
     deviceId: result.deviceId,
     token: stored.token,
     onConnect: () => out('  WS connected\n'),
     onDisconnect: (code: number) => out(`  WS disconnected (${code})\n`),
-    onWelcome: (rev: number) => {
+    onWelcome: (rev: number, queuedCommands) => {
       out(`  Resumed at rev ${rev}\n`);
       heartbeat?.kick();
+      // Drain any queued work the DO sent in the welcome frame. Without this,
+      // commands enqueued while the agent was offline would never be acked
+      // and would stay pending forever (Codex P2 'Wire socket commands').
+      for (const cmd of queuedCommands ?? []) {
+        processCommand(cmd);
+      }
     },
+    onCommand: (cmd) => processCommand(cmd),
     onRejected: async (reason: string) => {
       const { PilotError, errorCodes } = await import('../errors.js');
       out(`  Rejected: ${reason}\n`);
