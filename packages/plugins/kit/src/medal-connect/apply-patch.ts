@@ -105,13 +105,19 @@ function ensureSafePath(repoDir: string, relPath: string): string {
 /**
  * Apply a structured KitPatch to disk. Returns the list of repo-relative
  * paths that were mutated so the caller can `git add` exactly those files
- * before committing — staging the apps file alone (the legacy commitAndPush
- * behavior) would leave raw.write outputs uncommitted and the rebuild would
- * test local-only state.
+ * before committing.
+ *
+ * Two-phase: preflight validates every op (op-kind well-formedness, raw
+ * paths pass `ensureSafePath`) BEFORE any side effects. This avoids the
+ * partial-application leak where a patch like
+ * `[{raw.write: modules/x.nix}, {raw.write: secrets/y}]` would have
+ * written `modules/x.nix` to disk and only then thrown on the secrets op,
+ * leaving the kit repo dirty (Codex P2 sweep). With the preflight, either
+ * the full patch applies or nothing changes.
  *
  * Cask ops are idempotent: a duplicate `cask.add` or a missing
  * `cask.remove` is treated as a no-op (matches the existing connect cask
- * flow's retry semantics — see `kit-context.ts` `addCask`/`removeCask`).
+ * flow's retry semantics in `kit-context.ts` addCask/removeCask).
  */
 export async function applyKitPatch(
   repoDir: string,
@@ -124,6 +130,30 @@ export async function applyKitPatch(
     mutated.add(relative(normalizedRepoDir, absPath));
   };
 
+  // Phase 1: PREFLIGHT — validate every op before any disk side effects.
+  // Raw paths get the full ensureSafePath check (lexical traversal +
+  // forbidden-segment + symlink); cask ops just need a non-empty string.
+  // Unknown op kinds reject the whole patch. We resolve raw targets here
+  // too so phase 2 can write without re-parsing.
+  const rawTargets = new Map<KitPatchOp, string>();
+  for (const op of patch.ops) {
+    if (op.kind === 'cask.add' || op.kind === 'cask.remove') {
+      if (typeof op.cask !== 'string' || op.cask.length === 0) {
+        throw new Error(`invalid ${op.kind}: missing cask`);
+      }
+    } else if (op.kind === 'raw.write') {
+      if (typeof op.content !== 'string') {
+        throw new Error(`invalid raw.write: content must be a string`);
+      }
+      rawTargets.set(op, ensureSafePath(repoDir, op.path));
+    } else {
+      throw new Error(`unknown KitPatch op kind: ${(op as { kind: string }).kind}`);
+    }
+  }
+
+  // Phase 2: APPLY. Every op has been validated; the only side effects
+  // possible from here are duplicate-cask KitErrors (which we swallow per
+  // the idempotency contract) and genuine I/O failures (rare; bubble up).
   for (const op of patch.ops) {
     if (op.kind === 'cask.add') {
       try {
@@ -143,12 +173,14 @@ export async function applyKitPatch(
       }
       trackMutation(opts.appsFilePath);
     } else if (op.kind === 'raw.write') {
-      const target = ensureSafePath(repoDir, op.path);
+      const target = rawTargets.get(op);
+      if (!target) {
+        // Should be unreachable — preflight populated this map.
+        throw new Error(`internal: missing preflight target for raw.write ${op.path}`);
+      }
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, op.content, 'utf8');
       trackMutation(target);
-    } else {
-      throw new Error(`unknown KitPatch op kind: ${(op as { kind: string }).kind}`);
     }
   }
   return Array.from(mutated);

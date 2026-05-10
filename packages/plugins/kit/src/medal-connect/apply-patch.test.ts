@@ -217,4 +217,40 @@ describe('applyKitPatch', () => {
     const apps = JSON.parse(readFileSync(appsFile, 'utf8'));
     expect(apps.casks).toEqual(['existing']);
   });
+
+  it('preflights all ops before mutating — partial application is impossible (Codex P2)', async () => {
+    // The previous version applied ops in order, so a valid raw.write
+    // followed by a forbidden raw.write to secrets/ would have left the
+    // first file on disk before throwing on the second. The two-phase
+    // applyKitPatch validates everything first; the kit repo must remain
+    // untouched when ANY op in the patch is forbidden.
+    mkdirSync(join(dir, 'modules'));
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules/legit.nix', content: '{ }' },
+        { kind: 'raw.write', path: 'secrets/oslo.yaml', content: 'BOGUS' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /secrets/
+    );
+    // Verify the legit-looking file was NEVER created (preflight rejected
+    // the whole patch before phase 2 began).
+    expect(() => readFileSync(join(dir, 'modules/legit.nix'), 'utf8')).toThrow();
+  });
+
+  it('preflights cask ops too — bad cask name short-circuits before any disk write', async () => {
+    mkdirSync(join(dir, 'modules'));
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules/before.nix', content: '{ }' },
+        // Empty cask string → preflight rejects before phase 2.
+        { kind: 'cask.add', cask: '' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /cask/i
+    );
+    expect(() => readFileSync(join(dir, 'modules/before.nix'), 'utf8')).toThrow();
+  });
 });
