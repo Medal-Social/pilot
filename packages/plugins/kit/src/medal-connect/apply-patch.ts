@@ -162,6 +162,14 @@ export async function applyKitPatch(
   // Unknown op kinds reject the whole patch. We resolve raw targets here
   // too so phase 2 can write without re-parsing.
   const rawTargets = new Map<KitPatchOp, string>();
+  // Collect normalized repo-relative raw.write paths for cross-op
+  // path-prefix conflict detection (Codex P2 sweep #4 — file/dir
+  // collision). Two raw.write ops where one path is a path-segment
+  // ancestor of another (e.g. `modules` plus `modules/x.nix`) would
+  // either fail mid-application with EEXIST/ENOTDIR/EISDIR, leaving
+  // the kit dirty, or be a vector for surprising file/dir conflicts.
+  // Reject before any write happens.
+  const rawRelPaths: { op: KitPatchOp; rel: string }[] = [];
   for (const op of patch.ops) {
     if (op.kind === 'cask.add' || op.kind === 'cask.remove') {
       if (typeof op.cask !== 'string' || op.cask.length === 0) {
@@ -180,9 +188,31 @@ export async function applyKitPatch(
       if (typeof op.content !== 'string') {
         throw new Error(`invalid raw.write: content must be a string`);
       }
-      rawTargets.set(op, ensureSafePath(repoDir, op.path));
+      const target = ensureSafePath(repoDir, op.path);
+      rawTargets.set(op, target);
+      rawRelPaths.push({ op, rel: relative(normalizedRepoDir, target) });
     } else {
       throw new Error(`unknown KitPatch op kind: ${(op as { kind: string }).kind}`);
+    }
+  }
+
+  // Cross-op path-prefix conflict detection. Compare every pair of
+  // normalized raw.write paths: a duplicate (same path) or a
+  // path-segment ancestor relationship (one path's segments are a
+  // strict prefix of the other's segments) is a conflict. Compare on
+  // segment arrays (not raw strings) so `modules` vs `modules2/x` is
+  // NOT a false positive.
+  for (let i = 0; i < rawRelPaths.length; i++) {
+    for (let j = i + 1; j < rawRelPaths.length; j++) {
+      const a = rawRelPaths[i];
+      const b = rawRelPaths[j];
+      if (!a || !b) continue;
+      const conflict = describePathPrefixConflict(a.rel, b.rel);
+      if (conflict) {
+        throw new Error(
+          `Medal Connect raw.write path conflict (${conflict}): ${a.rel} vs ${b.rel}`
+        );
+      }
     }
   }
 
@@ -219,6 +249,40 @@ export async function applyKitPatch(
     }
   }
   return Array.from(mutated);
+}
+
+/**
+ * Returns a short human-readable conflict label if `a` and `b` collide
+ * as repo-relative path-segment paths, or `null` otherwise.
+ *
+ *   - "duplicate path" — `a` and `b` resolve to the same path
+ *   - "ancestor"       — one is a strict path-segment ancestor of the other
+ *
+ * Path-SEGMENT comparison (not raw substring): `modules` vs
+ * `modules2/x.nix` are unrelated (distinct first segments) and must not
+ * trigger.
+ *
+ * Comparison is case-INSENSITIVE to match macOS default (HFS+/APFS
+ * case-insensitive) and Windows behaviour (Codex P2 + Qodo bug sweep
+ * #4 / 5): `Modules` and `modules/x.nix` are the same path on those
+ * filesystems, so phase 2 would otherwise EEXIST/ENOTDIR after a prior
+ * write and leave the kit dirty. Mirrors the case-folding approach in
+ * `ensureSafePath` for forbidden first segments.
+ */
+function describePathPrefixConflict(a: string, b: string): string | null {
+  const aLower = a.toLowerCase();
+  const bLower = b.toLowerCase();
+  if (aLower === bLower) return 'duplicate path';
+  const aSegs = aLower.split(sep);
+  const bSegs = bLower.split(sep);
+  const shorter = aSegs.length < bSegs.length ? aSegs : bSegs;
+  const longer = aSegs.length < bSegs.length ? bSegs : aSegs;
+  for (let i = 0; i < shorter.length; i++) {
+    if (shorter[i] !== longer[i]) return null;
+  }
+  // Every segment of the shorter path matched the longer one's prefix
+  // — the shorter is a strict path-segment ancestor of the longer.
+  return 'ancestor';
 }
 
 function isDuplicateKitError(e: unknown): boolean {

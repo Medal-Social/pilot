@@ -336,4 +336,109 @@ describe('applyKitPatch', () => {
     await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(/cask/i);
     expect(() => readFileSync(join(dir, 'modules/before.nix'), 'utf8')).toThrow();
   });
+
+  it('rejects raw.write path-prefix conflicts (Codex P2 sweep #4 — file/dir collision)', async () => {
+    // A patch with two raw.write ops where one path is a path-segment
+    // ancestor of the other is unsafe: `modules` as a file plus
+    // `modules/x.nix` as another file would either fail with
+    // EEXIST/ENOTDIR mid-application (leaving the kit dirty) or be a
+    // vector for surprising file/dir conflicts. Preflight rejects before
+    // any filesystem writes.
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules', content: '{ }' },
+        { kind: 'raw.write', path: 'modules/x.nix', content: '{ }' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /prefix|conflict|ancestor/i
+    );
+    // Neither write happened.
+    expect(() => readFileSync(join(dir, 'modules'), 'utf8')).toThrow();
+    expect(() => readFileSync(join(dir, 'modules/x.nix'), 'utf8')).toThrow();
+  });
+
+  it('rejects raw.write path-prefix conflict regardless of order', async () => {
+    // Order-independent: deeper path first, then ancestor file.
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'a/b/c.nix', content: '{ }' },
+        { kind: 'raw.write', path: 'a/b', content: '{ }' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /prefix|conflict|ancestor/i
+    );
+  });
+
+  it('rejects raw.write duplicate path conflict (same path twice)', async () => {
+    // Two writes to the exact same path is also ambiguous — last-wins is
+    // surprising and likely a bug in the patch generator. Reject preflight.
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules/x.nix', content: 'one' },
+        { kind: 'raw.write', path: 'modules/x.nix', content: 'two' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /duplicate|conflict|prefix/i
+    );
+  });
+
+  it('does NOT reject raw.write paths that share a prefix string but not a path-segment ancestor', async () => {
+    // `modules` and `modules2/x.nix` share the prefix string "modules"
+    // but `modules2` is NOT a path-segment descendant of `modules`. Both
+    // writes must succeed (no false positive on substring prefix).
+    mkdirSync(join(dir, 'modules2'), { recursive: true });
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'foo.nix', content: '{ }' },
+        { kind: 'raw.write', path: 'foo-bar.nix', content: '{ }' },
+      ],
+    };
+    const mutated = await applyKitPatch(dir, patch, { appsFilePath: appsFile });
+    expect(mutated.sort()).toEqual(['foo-bar.nix', 'foo.nix']);
+  });
+
+  it('allows multiple raw.write ops in the same directory (sibling files, no ancestor overlap)', async () => {
+    mkdirSync(join(dir, 'modules'), { recursive: true });
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules/a.nix', content: '{ a = true; }' },
+        { kind: 'raw.write', path: 'modules/b.nix', content: '{ b = true; }' },
+      ],
+    };
+    const mutated = await applyKitPatch(dir, patch, { appsFilePath: appsFile });
+    expect(mutated.sort()).toEqual(['modules/a.nix', 'modules/b.nix']);
+    expect(readFileSync(join(dir, 'modules/a.nix'), 'utf8')).toBe('{ a = true; }');
+    expect(readFileSync(join(dir, 'modules/b.nix'), 'utf8')).toBe('{ b = true; }');
+  });
+
+  it('rejects raw.write conflicts case-insensitively (macOS default volumes)', async () => {
+    // On macOS HFS+/APFS default (case-insensitive), `Modules` and
+    // `modules/x.nix` are the same path. A case-sensitive comparison
+    // would let both writes pass preflight and then EEXIST/ENOTDIR mid-
+    // application, leaving the kit dirty (Codex P2 + Qodo sweep).
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'Modules', content: '{ }' },
+        { kind: 'raw.write', path: 'modules/x.nix', content: '{ }' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /prefix|conflict|ancestor/i
+    );
+  });
+
+  it('rejects raw.write duplicate-path conflict case-insensitively', async () => {
+    const patch: KitPatch = {
+      ops: [
+        { kind: 'raw.write', path: 'modules/X.nix', content: 'one' },
+        { kind: 'raw.write', path: 'MODULES/x.nix', content: 'two' },
+      ],
+    };
+    await expect(applyKitPatch(dir, patch, { appsFilePath: appsFile })).rejects.toThrow(
+      /duplicate|conflict|prefix/i
+    );
+  });
 });
