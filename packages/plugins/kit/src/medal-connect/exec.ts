@@ -1,0 +1,125 @@
+// Copyright (c) Medal Social. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import type { KitPatch } from './apply-patch.js';
+import type { SnapshotContext } from './snapshot.js';
+
+/**
+ * Local mirror of the `MedalConnectProvider` shapes from
+ * `@medalsocial/pilot/src/medal-connect/provider-types`. We avoid a direct
+ * cross-package import so the kit plugin stays independent of the CLI; the
+ * shapes are checked structurally at the seam where `createKitProvider`
+ * returns a `MedalConnectProvider`.
+ */
+export interface ProviderCommand {
+  kind: string;
+  args: Record<string, unknown>;
+}
+
+export type ExecResult =
+  | { status: 'ok'; result?: Record<string, unknown> }
+  | { status: 'failed'; error: string }
+  | {
+      status: 'awaiting_user';
+      prompt: {
+        kind: 'piv_pin' | 'touchid' | 'yubikey_otp' | 'sso_push';
+        reason: string;
+        ttlSec: number;
+      };
+    };
+
+export interface ExecDeps {
+  runRebuild: () => Promise<{ ok: boolean; durationMs: number; error?: string }>;
+  addCask: (cask: string) => Promise<void>;
+  removeCask: (cask: string) => Promise<void>;
+  persistLastRebuild: (state: { at: number; ok: boolean }) => Promise<void>;
+  /**
+   * Stage + commit + push. The optional `paths` arg, when provided, is the
+   * list of repo-relative files to `git add` before commit. The legacy
+   * call with no paths preserves the cask.add / cask.remove flow which
+   * relies on commitAndPush's internal apps-file resolution. The new
+   * `apply-patch-and-rebuild` flow always passes the mutated paths returned
+   * by `applyPatch` so raw.write outputs are never left unstaged.
+   */
+  commitAndPush: (message: string, paths?: readonly string[]) => Promise<void>;
+  /**
+   * Apply a structured patch to disk. Returns the list of repo-relative
+   * paths that were mutated so the caller can stage them. The kit-context
+   * implementation resolves the machine apps file dynamically and passes
+   * it through to `applyKitPatch` via `appsFilePath`.
+   */
+  applyPatch: (repoDir: string, patch: KitPatch) => Promise<readonly string[]>;
+}
+
+export async function execKit(
+  cmd: ProviderCommand,
+  _ctx: SnapshotContext,
+  deps: ExecDeps
+): Promise<ExecResult> {
+  if (!cmd.kind.startsWith('kit.')) {
+    return { status: 'failed', error: `wrong provider: ${cmd.kind}` };
+  }
+  const verb = cmd.kind.slice('kit.'.length);
+
+  if (verb === 'rebuild') {
+    try {
+      const r = await deps.runRebuild();
+      await deps.persistLastRebuild({ at: Date.now(), ok: r.ok });
+      if (!r.ok) {
+        return { status: 'failed', error: r.error ?? 'rebuild failed' };
+      }
+      return { status: 'ok', result: { durationMs: r.durationMs } };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      await deps.persistLastRebuild({ at: Date.now(), ok: false }).catch(() => undefined);
+      return { status: 'failed', error };
+    }
+  }
+
+  if (verb === 'cask.add' || verb === 'cask.remove') {
+    const cask = cmd.args.cask;
+    if (typeof cask !== 'string' || cask.length === 0) {
+      return { status: 'failed', error: 'missing or invalid cask arg' };
+    }
+    try {
+      if (verb === 'cask.add') await deps.addCask(cask);
+      else await deps.removeCask(cask);
+      await deps.commitAndPush(`connect: ${verb} ${cask}`);
+      return { status: 'ok', result: { cask } };
+    } catch (e) {
+      return { status: 'failed', error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  if (verb === 'apply-patch-and-rebuild') {
+    const patchArg = cmd.args.patch as KitPatch | undefined;
+    const message = cmd.args.message;
+    if (!patchArg || typeof patchArg !== 'object' || !Array.isArray(patchArg.ops)) {
+      return { status: 'failed', error: 'missing or invalid patch arg' };
+    }
+    if (typeof message !== 'string' || message.length === 0) {
+      return { status: 'failed', error: 'missing or invalid message arg' };
+    }
+    let mutatedPaths: readonly string[];
+    try {
+      mutatedPaths = await deps.applyPatch(_ctx.kitRepoDir, patchArg);
+      await deps.commitAndPush(message, mutatedPaths);
+    } catch (e) {
+      return { status: 'failed', error: e instanceof Error ? e.message : String(e) };
+    }
+    try {
+      const r = await deps.runRebuild();
+      await deps.persistLastRebuild({ at: Date.now(), ok: r.ok });
+      if (!r.ok) {
+        return { status: 'failed', error: r.error ?? 'rebuild failed' };
+      }
+      return { status: 'ok', result: { durationMs: r.durationMs } };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      await deps.persistLastRebuild({ at: Date.now(), ok: false }).catch(() => undefined);
+      return { status: 'failed', error };
+    }
+  }
+
+  return { status: 'failed', error: `unknown kit verb: ${verb}` };
+}

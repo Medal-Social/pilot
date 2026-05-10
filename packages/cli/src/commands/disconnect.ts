@@ -1,0 +1,134 @@
+// Copyright (c) Medal Social. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import { errorCodes, PilotError } from '../errors.js';
+import { deleteDeviceToken, loadDeviceToken } from '../medal-connect/keychain.js';
+
+const DEFAULT_API_BASE = 'https://medal.social';
+// Bound the unpair fetch so a stalled connection (dead TCP/TLS, unresponsive
+// proxy, hung response) cannot hang `pilot disconnect` indefinitely and leave
+// the device paired with the local credential intact (Codex P2 'Bound the
+// unpair request'). 30s is well above any healthy unpair round-trip while
+// still surfacing a typed DISCONNECT_SERVER_ERROR within an attention budget.
+const DISCONNECT_TIMEOUT_MS = 30_000;
+
+export interface DisconnectOpts {
+  apiBase?: string;
+  // Internal seams for tests:
+  _fetch?: typeof fetch;
+  _stdout?: (s: string) => void;
+  _stderr?: (s: string) => void;
+  /** Override the per-request abort timeout. Tests use a small value. */
+  _timeoutMs?: number;
+}
+
+export async function runDisconnectCommand(
+  deviceId: string,
+  opts: DisconnectOpts = {}
+): Promise<void> {
+  const fetchFn = opts._fetch ?? fetch;
+  const out = opts._stdout ?? ((s: string) => process.stdout.write(s));
+  const apiBase = opts.apiBase ?? DEFAULT_API_BASE;
+  const timeoutMs = opts._timeoutMs ?? DISCONNECT_TIMEOUT_MS;
+
+  const stored = loadDeviceToken(deviceId);
+  if (!stored) {
+    throw new PilotError(errorCodes.DISCONNECT_NO_KEYCHAIN_RECORD, deviceId);
+  }
+
+  // Wrap the unpair fetch the same way pair-flow wraps its requests: if the
+  // network rejects (offline, DNS failure, TLS error) before a Response
+  // exists, surface the same typed DISCONNECT_SERVER_ERROR with the
+  // underlying message as detail. Otherwise the rejection bubbles out as
+  // `Disconnect failed: fetch failed` and the user loses the consistent
+  // disconnect failure path (Codex P2).
+  //
+  // Also bound the request with an AbortController. Without it, a dead
+  // TCP/TLS path or proxy that never returns a response leaves
+  // `pilot disconnect` hanging forever — the user kills the process and
+  // the local credential stays on disk, even though the server may have
+  // already revoked the device (Codex P2 'Bound the unpair request').
+  const ac = new AbortController();
+  const abortTimer = setTimeout(() => ac.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetchFn(`${apiBase}/api/medal-connect/unpair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId, token: stored.token }),
+      signal: ac.signal,
+    });
+  } catch (e) {
+    throw new PilotError(
+      errorCodes.DISCONNECT_SERVER_ERROR,
+      (e as Error).message ?? 'network error'
+    );
+  } finally {
+    clearTimeout(abortTimer);
+  }
+
+  if (!res.ok) {
+    throw new PilotError(errorCodes.DISCONNECT_SERVER_ERROR, `HTTP ${res.status}`);
+  }
+
+  // Parse defensively — a 2xx with non-JSON body should not become a raw
+  // SyntaxError stack trace at the top level. Map to a typed PilotError.
+  let data: { ok?: unknown; reason?: unknown };
+  try {
+    data = (await res.json()) as { ok?: unknown; reason?: unknown };
+  } catch (e) {
+    throw new PilotError(errorCodes.DISCONNECT_BAD_RESPONSE, (e as Error).message);
+  }
+
+  // Strict success check: only proceed to delete the local keychain entry
+  // if the server confirmed `ok === true` as a literal boolean. A backend
+  // or proxy mismatch could return non-boolean truthy values (e.g.
+  // `{"ok": "false"}` as a string) that pass a loose `!data.ok` check —
+  // we'd then nuke the local credential even though the server never
+  // actually revoked the device. Treat any other shape as a bad response
+  // (Codex P2 'Validate unpair JSON before deleting the token').
+  if (data.ok !== true && data.ok !== false) {
+    throw new PilotError(
+      errorCodes.DISCONNECT_BAD_RESPONSE,
+      `unexpected ok value: ${typeof data.ok}`
+    );
+  }
+  if (!data.ok) {
+    const reason = typeof data.reason === 'string' ? data.reason : undefined;
+    throw new PilotError(errorCodes.DISCONNECT_UNPAIR_FAILED, reason);
+  }
+
+  // Server unpair succeeded; now delete the local keychain entry. If the OS
+  // refuses (locked keychain, permission revoked), surface a typed error
+  // instead of falsely reporting "Disconnected" while credentials remain on
+  // disk.
+  //
+  // @napi-rs/keyring's Entry.deletePassword() can either return `false` (item
+  // not found) OR throw a keychain error (locked, permission denied, OS-level
+  // failure — see the package's index.d.ts). Treat both as the same typed
+  // failure; users see one consistent message and the underlying OS error
+  // message is attached as `cause` for support diagnostics. Without the
+  // try/catch, a thrown deletion error would bubble out as a raw stack trace
+  // and the local credential could remain stuck despite the server having
+  // already revoked the device (Codex P2).
+  let deleted: boolean;
+  try {
+    deleted = deleteDeviceToken(deviceId);
+  } catch (e) {
+    // OS-level keychain error (locked, permission denied, etc.). Wrap it in
+    // a typed PilotError; attach the underlying message via `cause` after
+    // construction so support has the OS-level reason, but the user-facing
+    // message stays the consistent DISCONNECT_KEYCHAIN_DELETE_FAILED string.
+    const wrapped = new PilotError(errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED, deviceId);
+    wrapped.cause = e;
+    throw wrapped;
+  }
+  if (!deleted) {
+    throw new PilotError(errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED, deviceId);
+  }
+  out(`Disconnected ${deviceId}\n`);
+}
+
+export function runDisconnect(deviceId: string, apiBase?: string): Promise<void> {
+  return runDisconnectCommand(deviceId, { apiBase });
+}

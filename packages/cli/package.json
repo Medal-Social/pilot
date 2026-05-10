@@ -1,6 +1,6 @@
 {
   "name": "@medalsocial/pilot",
-  "version": "0.5.2",
+  "version": "0.5.1",
   "type": "module",
   "description": "Your AI crew, ready to fly. Medal Social's AI-powered CLI platform.",
   "license": "Apache-2.0",
@@ -62,10 +62,14 @@
   },
   "dependencies": {
     "@medalsocial/kit": "workspace:*",
+    "@napi-rs/keyring": "^1.3.0",
+    "@types/ws": "^8.18.1",
     "commander": "14.0.3",
     "ink": "7.0.2",
+    "open": "^11.0.0",
     "react": "19.2.6",
     "smol-toml": "1.6.1",
+    "ws": "^8.20.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

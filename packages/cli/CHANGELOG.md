@@ -1,13 +1,5 @@
 # @medalsocial/pilot
 
-## 0.5.2
-
-### Patch Changes
-
-- [#135](https://github.com/Medal-Social/Pilot/pull/135) [`fb1c835`](https://github.com/Medal-Social/Pilot/commit/fb1c8351aeba6a94b5c3236e9457db1f7e4fe60d) Thanks [@alioftech](https://github.com/alioftech)! - Two release-quality fixes:
-  - The auto-generated Homebrew tap formula now ships with an explicit `version` field and URLs pinned to the release tag, so `brew upgrade pilot` actually upgrades. Previously the formula used `releases/latest` URLs and no version field, making `brew upgrade pilot` a no-op until a human pushed a manual correction on top of each tap PR.
-  - `pilot kit init` now exits non-zero when refusing on `gitStrategy=none` (and on any other KitError). Shell scripts wrapping the command can detect the refusal via exit code instead of having to grep stderr.
-
 ## 0.5.1
 
 ### Patch Changes

@@ -24,6 +24,22 @@ export const errorCodes = {
   ADMIN_ACCESS_DENIED: 'ADMIN_ACCESS_DENIED',
   DISPATCH_UNAVAILABLE: 'DISPATCH_UNAVAILABLE',
   DISPATCH_NOT_READY: 'DISPATCH_NOT_READY',
+  CONNECT_PAIR_CREATE_FAILED: 'CONNECT_PAIR_CREATE_FAILED',
+  CONNECT_UNSUPPORTED_PLATFORM: 'CONNECT_UNSUPPORTED_PLATFORM',
+  CONNECT_PAIR_CODE_EXPIRED: 'CONNECT_PAIR_CODE_EXPIRED',
+  CONNECT_PAIR_CODE_NOT_FOUND: 'CONNECT_PAIR_CODE_NOT_FOUND',
+  CONNECT_PAIR_TIMEOUT: 'CONNECT_PAIR_TIMEOUT',
+  CONNECT_PAIR_UNSEAL_FAILED: 'CONNECT_PAIR_UNSEAL_FAILED',
+  CONNECT_KEYCHAIN_LOST_TOKEN: 'CONNECT_KEYCHAIN_LOST_TOKEN',
+  CONNECT_KEYCHAIN_READ_FAILED: 'CONNECT_KEYCHAIN_READ_FAILED',
+  CONNECT_REJECTED: 'CONNECT_REJECTED',
+  DISCONNECT_NO_KEYCHAIN_RECORD: 'DISCONNECT_NO_KEYCHAIN_RECORD',
+  DISCONNECT_SERVER_ERROR: 'DISCONNECT_SERVER_ERROR',
+  DISCONNECT_BAD_RESPONSE: 'DISCONNECT_BAD_RESPONSE',
+  DISCONNECT_UNPAIR_FAILED: 'DISCONNECT_UNPAIR_FAILED',
+  DISCONNECT_KEYCHAIN_DELETE_FAILED: 'DISCONNECT_KEYCHAIN_DELETE_FAILED',
+  CONNECT_KIT_CONFIG_NOT_FOUND: 'CONNECT_KIT_CONFIG_NOT_FOUND',
+  CONNECT_KIT_MACHINE_NOT_IN_CONFIG: 'CONNECT_KIT_MACHINE_NOT_IN_CONFIG',
 } as const;
 
 type ErrorCode = (typeof errorCodes)[keyof typeof errorCodes];
@@ -58,6 +74,32 @@ const userMessages: Record<ErrorCode, string> = {
   DISPATCH_UNAVAILABLE:
     'Dispatch is not set up yet on this machine. Run `pilot up dispatch` to install it.',
   DISPATCH_NOT_READY: 'That dispatch action is not available yet in this Pilot release.',
+  CONNECT_PAIR_CREATE_FAILED:
+    'Could not start the pair flow. Check your network connection and try again.',
+  CONNECT_UNSUPPORTED_PLATFORM:
+    'Medal Connect is not yet supported on this operating system. Currently supported: macOS and Linux.',
+  CONNECT_PAIR_CODE_EXPIRED:
+    'Pair code expired (5-minute window). Run `pilot connect` again to get a fresh code.',
+  CONNECT_PAIR_CODE_NOT_FOUND:
+    'Pair code not found. Run `pilot connect` again to get a fresh code.',
+  CONNECT_PAIR_TIMEOUT: 'Pair flow timed out before approval. Run `pilot connect` again.',
+  CONNECT_PAIR_UNSEAL_FAILED:
+    'Could not decrypt the device token returned by Medal Social. The pairing was approved server-side; run `pilot connect` again to retry. If this keeps happening, check that your Pilot version matches the server.',
+  CONNECT_KEYCHAIN_LOST_TOKEN:
+    'Could not save the device token to your keychain. Check Keychain Access permissions and try again.',
+  CONNECT_KEYCHAIN_READ_FAILED:
+    'Could not read the device token from your keychain. The keychain may be locked or unavailable — unlock it and try again.',
+  CONNECT_REJECTED: 'The Medal Connect server rejected this device. Run `pilot connect` again.',
+  DISCONNECT_NO_KEYCHAIN_RECORD: 'No paired device found in your keychain for that deviceId.',
+  DISCONNECT_SERVER_ERROR: 'The Medal Connect server rejected the unpair request.',
+  DISCONNECT_BAD_RESPONSE: 'The Medal Connect server returned an unexpected response.',
+  DISCONNECT_UNPAIR_FAILED: 'Could not unpair the device. Try again in a few seconds.',
+  DISCONNECT_KEYCHAIN_DELETE_FAILED:
+    'The server unpaired the device, but the local token could not be removed from the keychain. Check Keychain Access permissions and remove the entry manually.',
+  CONNECT_KIT_CONFIG_NOT_FOUND:
+    'No kit configuration was found for this machine. Run `pilot kit init` to set up kit before connecting.',
+  CONNECT_KIT_MACHINE_NOT_IN_CONFIG:
+    'This machine is not registered in your kit configuration. Add a `machines` entry for this device id and try again.',
 };
 
 export class PilotError extends Error {

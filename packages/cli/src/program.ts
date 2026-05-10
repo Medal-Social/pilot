@@ -2,8 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Command } from 'commander';
+import { PilotError } from './errors.js';
 import { loadSettings, type PilotSettings } from './settings.js';
 import { VERSION } from './version.js';
+
+/**
+ * Render an error to stderr in the conventional `pilot <verb>` form.
+ * PilotError messages are user-facing; raw Error.message is generic-friendly
+ * but never includes internal sentinel strings (those are mapped to a
+ * PilotError before reaching here).
+ */
+function reportCliError(verb: string, e: unknown): void {
+  if (e instanceof PilotError) {
+    process.stderr.write(`${verb} failed [${e.code}]: ${e.message}\n`);
+  } else {
+    const msg = e instanceof Error ? e.message : String(e);
+    process.stderr.write(`${verb} failed: ${msg}\n`);
+  }
+}
 
 export function buildProgram(settings: PilotSettings = loadSettings()): Command {
   const program = new Command();
@@ -112,6 +128,42 @@ export function buildProgram(settings: PilotSettings = loadSettings()): Command 
     .action(async () => {
       const { runAdmin } = await import('./commands/admin.js');
       await runAdmin();
+    });
+
+  program
+    .command('connect')
+    .description('Pair this machine with a Medal Social workspace')
+    .option('--headless', 'Print code/URL only; do not open a browser')
+    .option('--workspace <slug>', 'Advisory workspace slug (user still confirms in browser)')
+    .option('--api-base <url>', 'Override the Medal Social API base (default https://medal.social)')
+    .action(async (rawOpts: { headless?: boolean; workspace?: string; apiBase?: string }) => {
+      const { runConnectCommand } = await import('./commands/connect.js');
+      try {
+        await runConnectCommand({
+          apiBase: rawOpts.apiBase,
+          headless: rawOpts.headless,
+          workspace: rawOpts.workspace,
+        });
+      } catch (e) {
+        reportCliError('Connect', e);
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('disconnect <deviceId>')
+    .description('Revoke this device from its Medal Social workspace')
+    .option('--api-base <url>', 'Override the Medal Social API base (default https://medal.social)')
+    .action(async (deviceId: string, rawOpts: { apiBase?: string }) => {
+      const { runDisconnect } = await import('./commands/disconnect.js');
+      try {
+        await runDisconnect(deviceId, rawOpts.apiBase);
+      } catch (e) {
+        // Do NOT exit silently on disconnect failure (Qodo Bug). Render the
+        // error so users and support have something to act on.
+        reportCliError('Disconnect', e);
+        process.exit(1);
+      }
     });
 
   const kitEnabled = settings.plugins['@medalsocial/kit']?.enabled !== false;

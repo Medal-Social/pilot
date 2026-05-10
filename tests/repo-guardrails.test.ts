@@ -70,12 +70,23 @@ describe('repo guardrails', () => {
       expect.arrayContaining(['dist', 'README.md', 'LICENSE', '!dist/**/*.test.*'])
     );
 
-    // kit is an internal plugin — must not be published
+    // kit is an internal plugin — must not be published. Subpath exports are
+    // permitted for cross-package imports inside the monorepo (e.g. the
+    // medal-connect agent runtime needs `@medalsocial/kit/medal-connect`
+    // and `@medalsocial/kit/commands/apps`); they all point at compiled
+    // `./dist/...` paths.
     expect(kitPkg.private).toBe(true);
-    expect(kitPkg.exports).toEqual({
+    expect(kitPkg.exports).toMatchObject({
       '.': './dist/index.js',
       './package.json': './package.json',
     });
+    for (const [key, value] of Object.entries(kitPkg.exports ?? {})) {
+      if (key === './package.json') {
+        expect(value).toBe('./package.json');
+      } else {
+        expect(value).toMatch(/^\.\/dist\//);
+      }
+    }
     expect(kitPkg.files).toEqual(
       expect.arrayContaining(['dist', 'plugin.toml', 'README.md', 'LICENSE', '!dist/**/*.test.*'])
     );
