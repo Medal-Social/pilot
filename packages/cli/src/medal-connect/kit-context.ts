@@ -99,12 +99,13 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     : dirname(kitConfigPath);
   const machineType = machine.type;
 
-  // Apps file is machine-scoped: machines/<machineId>.apps.json (kit's
-  // canonical layout, see commands/kit.ts machineFile()). Resolve once on
-  // setup so we don't keep re-walking the directory tree per command, and so
-  // commitAndPush can stage the file with a stable relative path.
-  const appsFile = resolveMachineAppsFile(kitRepoDir, opts.machineId);
-  const appsRelative = relative(kitRepoDir, appsFile);
+  // Apps file resolution is dynamic — `pilot kit update` can migrate a legacy
+  // apps/apps.json into machines/<machineId>.apps.json while the agent is
+  // running, and the next cask command MUST follow the new file or rebuilds
+  // will diverge from the cloud's view. Re-resolve per call (cheap — a
+  // single readdir + statSync per `machines/`) instead of caching the
+  // setup-time path (Codex P2 sweep #8).
+  const currentAppsFile = () => resolveMachineAppsFile(kitRepoDir, opts.machineId);
 
   return {
     kitRepoDir,
@@ -130,7 +131,7 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       // before reaching the push. By swallowing the duplicate we let the
       // unchanged push step send the pending commit (Codex P2 sweep).
       try {
-        await addApp(appsFile, cask, 'casks');
+        await addApp(currentAppsFile(), cask, 'casks');
       } catch (e) {
         if (!isDuplicateError(e)) throw e;
       }
@@ -141,7 +142,7 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       // but we still wrap for symmetry with addCask in case the
       // implementation changes.
       try {
-        await removeApp(appsFile, cask, 'casks');
+        await removeApp(currentAppsFile(), cask, 'casks');
       } catch (e) {
         if (!isDuplicateError(e)) throw e;
       }
@@ -149,6 +150,7 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     commitAndPush: async (message) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
+      const appsRelative = relative(kitRepoDir, currentAppsFile());
 
       // `git add` is expected to succeed: the apps file definitely exists
       // by the time we get here (addApp/removeApp wrote to it just now)
