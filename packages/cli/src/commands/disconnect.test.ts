@@ -153,4 +153,40 @@ describe('runDisconnectCommand', () => {
     // local credential was not actually removed.
     expect(out.mock.calls.map((c) => c[0]).join('')).not.toContain('Disconnected');
   });
+
+  it('throws DISCONNECT_KEYCHAIN_DELETE_FAILED when keychain delete THROWS (Codex P2)', async () => {
+    // @napi-rs/keyring's Entry.deletePassword() can either return false OR
+    // throw an OS-level keychain error (locked, permission denied, etc.).
+    // The throw path must surface the same typed PilotError as the
+    // false-return path, with the underlying error attached as `cause` so
+    // support has the OS message but the user-facing string stays consistent.
+    (loadDeviceToken as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      deviceId: 'd',
+      workspaceId: 'w',
+      doUrl: 'u',
+      token: 't',
+    });
+    const osError = new Error('keychain locked');
+    (deleteDeviceToken as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      throw osError;
+    });
+
+    const fetchFn = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
+    const out = vi.fn();
+    const err = vi.fn();
+
+    const promise = runDisconnectCommand('d', {
+      _fetch: fetchFn as unknown as typeof fetch,
+      _stdout: out,
+      _stderr: err,
+    });
+    await expect(promise).rejects.toBeInstanceOf(PilotError);
+    await expect(promise).rejects.toMatchObject({
+      code: errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED,
+      cause: osError,
+    });
+    // Same guarantee as the false-return path: must NOT print "Disconnected"
+    // because the local credential is still on disk.
+    expect(out.mock.calls.map((c) => c[0]).join('')).not.toContain('Disconnected');
+  });
 });

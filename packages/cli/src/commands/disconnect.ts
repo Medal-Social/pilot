@@ -54,7 +54,27 @@ export async function runDisconnectCommand(
   // refuses (locked keychain, permission revoked), surface a typed error
   // instead of falsely reporting "Disconnected" while credentials remain on
   // disk.
-  const deleted = deleteDeviceToken(deviceId);
+  //
+  // @napi-rs/keyring's Entry.deletePassword() can either return `false` (item
+  // not found) OR throw a keychain error (locked, permission denied, OS-level
+  // failure — see the package's index.d.ts). Treat both as the same typed
+  // failure; users see one consistent message and the underlying OS error
+  // message is attached as `cause` for support diagnostics. Without the
+  // try/catch, a thrown deletion error would bubble out as a raw stack trace
+  // and the local credential could remain stuck despite the server having
+  // already revoked the device (Codex P2).
+  let deleted: boolean;
+  try {
+    deleted = deleteDeviceToken(deviceId);
+  } catch (e) {
+    // OS-level keychain error (locked, permission denied, etc.). Wrap it in
+    // a typed PilotError; attach the underlying message via `cause` after
+    // construction so support has the OS-level reason, but the user-facing
+    // message stays the consistent DISCONNECT_KEYCHAIN_DELETE_FAILED string.
+    const wrapped = new PilotError(errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED, deviceId);
+    wrapped.cause = e;
+    throw wrapped;
+  }
   if (!deleted) {
     throw new PilotError(errorCodes.DISCONNECT_KEYCHAIN_DELETE_FAILED, deviceId);
   }
