@@ -1,5 +1,20 @@
 # @medalsocial/kit
 
+## 0.3.0
+
+### Minor Changes
+
+- [#143](https://github.com/Medal-Social/Pilot/pull/143) [`d67a03c`](https://github.com/Medal-Social/Pilot/commit/d67a03c3891d32ed24a4cb4614c29a0463b292cc) Thanks [@alioftech](https://github.com/alioftech)! - medal-connect Plan 3: kit registers as the first MedalConnectProvider.
+
+  `pilot connect` now pushes a `kit.state` snapshot on first connect and routes
+  incoming `kit.rebuild` / `kit.cask.add` / `kit.cask.remove` commands through to
+  the existing kit machinery. Provider lifecycle events flow back as
+  medalConnectEvents activity feed entries.
+
+- [#143](https://github.com/Medal-Social/Pilot/pull/143) [`d67a03c`](https://github.com/Medal-Social/Pilot/commit/d67a03c3891d32ed24a4cb4614c29a0463b292cc) Thanks [@alioftech](https://github.com/alioftech)! - medal-connect: kit.apply-patch-and-rebuild verb.
+
+  Applies a structured KitPatch (cask add/remove + non-secret raw .nix writes), commits + pushes, runs rebuild. Hard-rejects writes to `secrets/*`, `.git/*`, and `.medal-connect/*` paths (case-insensitive); rejects path traversal, absolute paths, and writes through symlinked ancestors. The CLI's `pilot connect` flow now passes `resolveAppsFile` into the kit provider so cask ops always target the machine-resolved apps file (`machines/<m>.apps.json` post-migration; legacy `apps/apps.json` fallback).
+
 ## 0.2.0
 
 ### Minor Changes
