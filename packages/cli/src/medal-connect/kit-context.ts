@@ -165,12 +165,18 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     commitAndPush: async (message, paths) => {
       const skip = config.gitStrategy === 'none';
       if (skip) return;
-      // Default to staging only the resolved apps file when no explicit
-      // paths were given (cask.add / cask.remove path). When the
-      // apply-patch-and-rebuild flow passes mutated paths, stage exactly
-      // those — that's how raw.write outputs make it into the commit.
-      const stagePaths =
-        paths && paths.length > 0 ? Array.from(paths) : [relative(kitRepoDir, currentAppsFile())];
+      // Three-way branching on `paths`:
+      //   undefined  → legacy cask.add / cask.remove flow; stage only the
+      //                resolved apps file.
+      //   empty []   → explicit "no files to stage" — apply-patch-and-rebuild
+      //                with an empty patch. Skip the entire add/commit/push
+      //                cycle so the empty patch can't accidentally commit
+      //                unrelated worktree edits under the cloud-supplied
+      //                message (Codex P2 sweep — empty-explicit-paths fallback).
+      //   non-empty  → apply-patch-and-rebuild with mutated paths; stage
+      //                exactly those.
+      if (paths && paths.length === 0) return;
+      const stagePaths = paths ? Array.from(paths) : [relative(kitRepoDir, currentAppsFile())];
 
       // `git add` is expected to succeed: the path(s) were just written
       // (or, for the apps-file fallback, the path was resolved at setup
@@ -178,7 +184,18 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       // (index lock, path validation, permissions) and MUST bubble up so
       // the cloud sees a failed command instead of ok:true on a
       // half-applied edit (Codex P2 sweep).
-      const r1 = await exec.run('git', ['add', '--', ...stagePaths], { cwd: kitRepoDir });
+      //
+      // `--literal-pathspecs` disables Git's pathspec magic (`:(glob)`,
+      // `:!exclude`, etc.) so a path that happens to contain `:(...)`
+      // characters (legal on Linux filenames) is staged as a literal
+      // filename rather than interpreted as a magic pathspec — which
+      // would otherwise let a remote `raw.write` patch with
+      // `:(glob)secrets/*` stage worktree files outside the file we
+      // actually wrote (Codex P1 sweep — stage raw-write paths as
+      // literal Git pathspecs).
+      const r1 = await exec.run('git', ['add', '--literal-pathspecs', '--', ...stagePaths], {
+        cwd: kitRepoDir,
+      });
       if (r1.code !== 0) {
         const detail = r1.stderr.trim().slice(0, 500);
         throw new Error(`git add failed: ${detail || `exit ${r1.code}`}`);
