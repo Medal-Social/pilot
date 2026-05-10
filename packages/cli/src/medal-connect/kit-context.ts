@@ -123,10 +123,28 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
       };
     },
     addCask: async (cask) => {
-      await addApp(appsFile, cask, 'casks');
+      // Treat KIT_APPS_DUPLICATE as a no-op so we still reach commitAndPush.
+      // This makes kit.cask.add idempotent on retry: when an earlier
+      // attempt's git push failed (network/credentials) the local commit
+      // is still present, but a naive retry would throw on the duplicate
+      // before reaching the push. By swallowing the duplicate we let the
+      // unchanged push step send the pending commit (Codex P2 sweep).
+      try {
+        await addApp(appsFile, cask, 'casks');
+      } catch (e) {
+        if (!isDuplicateError(e)) throw e;
+      }
     },
     removeCask: async (cask) => {
-      await removeApp(appsFile, cask, 'casks');
+      // Symmetric idempotency: removing an already-removed cask is a no-op.
+      // removeApp doesn't currently throw for missing entries (it filters),
+      // but we still wrap for symmetry with addCask in case the
+      // implementation changes.
+      try {
+        await removeApp(appsFile, cask, 'casks');
+      } catch (e) {
+        if (!isDuplicateError(e)) throw e;
+      }
     },
     commitAndPush: async (message) => {
       const skip = config.gitStrategy === 'none';
@@ -176,15 +194,32 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
 
 /**
  * Locate the machine-specific apps file (`machines/<machine>.apps.json`),
- * matching `pilot kit apps`'s `findMachineFile()` logic. Falls back to the
- * conventional path so a missing file still yields a stable, informative
- * write location for the first add.
+ * matching `pilot kit apps`'s `findMachineFile()` logic. If no machine
+ * file exists but the legacy single-file location does, target that — the
+ * snapshot side does the same fallback, so cask edits and snapshots agree
+ * on the file in both layouts (Codex P2 sweep #6). Final fallback is the
+ * conventional machine path for fresh repos so the first add lands
+ * somewhere predictable.
  */
 function resolveMachineAppsFile(repoDir: string, machineId: string): string {
   const target = `${machineId}.apps.json`;
   const found = findInDir(join(repoDir, 'machines'), target);
   if (found) return found;
+  const legacy = join(repoDir, 'apps', 'apps.json');
+  if (existsSync(legacy)) return legacy;
   return join(repoDir, 'machines', target);
+}
+
+/**
+ * Detect KitError(KIT_APPS_DUPLICATE). We can't import the error directly
+ * (would require a runtime dependency on the error class identity across
+ * the @medalsocial/kit package boundary), so match on the discriminating
+ * `code` field that KitError attaches.
+ */
+function isDuplicateError(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null) return false;
+  const code = (e as { code?: unknown }).code;
+  return code === 'KIT_APPS_DUPLICATE';
 }
 
 function findInDir(root: string, target: string): string | null {
