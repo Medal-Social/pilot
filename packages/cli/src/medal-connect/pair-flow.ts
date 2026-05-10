@@ -102,13 +102,23 @@ export async function runPairFlow(opts: PairFlowOptions = {}): Promise<PairFlowR
     const sealed: SealedEnvelope = JSON.parse(data.sealedDeviceToken);
     const token = await openSealed(sealed, cliKp.privateJwk);
 
-    // 5. Persist in keychain.
-    storeDeviceToken({
-      deviceId: data.deviceId,
-      workspaceId: data.workspaceId,
-      doUrl: data.doUrl,
-      token,
-    });
+    // 5. Persist in keychain. Map any throw (locked macOS keychain,
+    //    unavailable Linux secret service, permission revoked) to the
+    //    typed CONNECT_KEYCHAIN_LOST_TOKEN error so connect.ts surfaces a
+    //    user-friendly message instead of a raw Error stack.
+    try {
+      storeDeviceToken({
+        deviceId: data.deviceId,
+        workspaceId: data.workspaceId,
+        doUrl: data.doUrl,
+        token,
+      });
+    } catch (e) {
+      throw new PilotError(
+        errorCodes.CONNECT_KEYCHAIN_LOST_TOKEN,
+        (e as Error).message ?? data.deviceId
+      );
+    }
 
     return {
       deviceId: data.deviceId,
