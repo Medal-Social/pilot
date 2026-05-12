@@ -1,8 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { exec } from './exec.mjs';
 
-const stagedFiles = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], {
-  encoding: 'utf8',
-})
+const stagedFiles = exec('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'])
   .split('\n')
   .map((file) => file.trim())
   .filter(Boolean);
@@ -17,6 +15,6 @@ const args = npmExecPath
   ? [npmExecPath, 'exec', 'secretlint', ...stagedFiles]
   : ['exec', 'secretlint', ...stagedFiles];
 
-execFileSync(command, args, {
+exec(command, args, {
   stdio: 'inherit',
 });

@@ -29,19 +29,21 @@ import { execFileSync } from 'node:child_process';
  * @param {boolean} [opts.tolerant=false] - When true, returns `null` on non-zero exit or spawn error instead of throwing.
  * @param {string} [opts.cwd] - Working directory.
  * @param {NodeJS.ProcessEnv} [opts.env] - Environment overrides.
+ * @param {'pipe' | 'inherit'} [opts.stdio='pipe'] - Output handling for the child process.
  * @param {number} [opts.maxBuffer] - Override default stdout buffer size.
  * @returns {string | null} Trimmed stdout, or `null` when `tolerant` is set and the command failed.
  */
 export function exec(cmd, args, opts = {}) {
-  const { tolerant = false, cwd, env, maxBuffer } = opts;
+  const { tolerant = false, cwd, env, maxBuffer, stdio = 'pipe' } = opts;
   try {
     const stdout = execFileSync(cmd, args, {
-      encoding: 'utf8',
       cwd,
       env,
       maxBuffer,
+      stdio,
+      encoding: stdio === 'pipe' ? 'utf8' : undefined,
     });
-    return stdout.trim();
+    return typeof stdout === 'string' ? stdout.trim() : '';
   } catch (error) {
     if (tolerant) return null;
     throw error;
