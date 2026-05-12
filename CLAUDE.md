@@ -37,7 +37,9 @@ admin imports on pre-existing files) are tolerated; errors block. Don't use
 - **Build**: tsc (ESM) + bun build --compile (binary)
 - **Test**: Vitest + ink-testing-library + E2E
 - **Lint**: Biome (strict, matching medal-monorepo)
-- **Release**: Changesets + GitHub Actions
+- **Release**: Changesets + GitHub Actions with npm trusted publishing/OIDC
+
+Release workflows must use GitHub OIDC trusted publishing and provenance for npm. Do not add `NPM_TOKEN` or separate `RELEASE_APP_*` credentials; use the shared GitHub App secrets (`APP_ID` and `APP_PRIVATE_KEY`) when a workflow needs a bot token.
 
 ## Code Conventions
 
