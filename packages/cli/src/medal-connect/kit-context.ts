@@ -127,6 +127,49 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     machineType,
     runRebuild: async () => {
       const start = Date.now();
+
+      if (machineType === 'linux') {
+        // Linux (non-NixOS) goes through system-manager (system layer) then
+        // home-manager (user layer). Resolve `system-manager` via `which`
+        // because sudo strips PATH and the binary lives under ~/.nix-profile.
+        const whichSm = await exec.run('which', ['system-manager']);
+        const smBin =
+          whichSm.code === 0 && whichSm.stdout.trim() ? whichSm.stdout.trim() : 'system-manager';
+        const sm = await exec.run('sudo', [smBin, 'switch', '--flake', `.#${opts.machineId}`], {
+          cwd: kitRepoDir,
+        });
+        if (sm.code !== 0) {
+          return {
+            ok: false,
+            durationMs: Date.now() - start,
+            error: sm.stderr.slice(0, 500),
+          };
+        }
+        const whichHm = await exec.run('which', ['home-manager']);
+        const hm =
+          whichHm.code === 0
+            ? await exec.run('home-manager', ['switch', '--flake', `.#${opts.machineId}`], {
+                cwd: kitRepoDir,
+              })
+            : await exec.run(
+                'nix',
+                [
+                  'run',
+                  'github:nix-community/home-manager',
+                  '--',
+                  'switch',
+                  '--flake',
+                  `.#${opts.machineId}`,
+                ],
+                { cwd: kitRepoDir }
+              );
+        return {
+          ok: hm.code === 0,
+          durationMs: Date.now() - start,
+          error: hm.code === 0 ? undefined : hm.stderr.slice(0, 500),
+        };
+      }
+
       const cmd = machineType === 'darwin' ? 'darwin-rebuild' : 'nixos-rebuild';
       const r = await exec.run('sudo', [cmd, 'switch', '--flake', `.#${opts.machineId}`], {
         cwd: kitRepoDir,

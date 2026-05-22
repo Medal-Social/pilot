@@ -65,6 +65,120 @@ describe('resolveKitContext', () => {
     });
     await expect(promise).rejects.toMatchObject({ code: errorCodes.CONNECT_KIT_CONFIG_NOT_FOUND });
   });
+
+  it('routes linux runRebuild through system-manager + home-manager (not nixos-rebuild)', async () => {
+    writeFileSync(
+      join(dir, 'kit.config.json'),
+      JSON.stringify({
+        name: 'kit',
+        repo: 'git@github.com:example/kit.git',
+        gitStrategy: 'none',
+        machines: { lnx: { type: 'linux', user: 'alice' } },
+      })
+    );
+    const calls: { cmd: string; args: readonly string[] }[] = [];
+    const exec = {
+      run: async (cmd: string, args: readonly string[]) => {
+        calls.push({ cmd, args: Array.from(args) });
+        if (cmd === 'which' && args[0] === 'system-manager')
+          return { code: 0, stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '' };
+        if (cmd === 'which' && args[0] === 'home-manager')
+          return { code: 0, stdout: '/home/alice/.nix-profile/bin/home-manager\n', stderr: '' };
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const ctx = await resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'lnx',
+      exec,
+    });
+    const result = await ctx.runRebuild();
+    expect(result.ok).toBe(true);
+    // Linux rebuilds must not fall through to nixos-rebuild.
+    expect(calls.find((c) => c.args[0] === 'nixos-rebuild')).toBeUndefined();
+    expect(calls.find((c) => c.args[0] === 'darwin-rebuild')).toBeUndefined();
+    // System layer goes through sudo + resolved system-manager path.
+    expect(
+      calls.find(
+        (c) =>
+          c.cmd === 'sudo' &&
+          c.args[0] === '/home/alice/.nix-profile/bin/system-manager' &&
+          c.args[1] === 'switch'
+      )
+    ).toBeDefined();
+    // User layer is home-manager, no sudo.
+    expect(calls.find((c) => c.cmd === 'home-manager' && c.args[0] === 'switch')).toBeDefined();
+  });
+
+  it('linux runRebuild falls back to `nix run` when home-manager is missing on PATH', async () => {
+    writeFileSync(
+      join(dir, 'kit.config.json'),
+      JSON.stringify({
+        name: 'kit',
+        repo: 'git@github.com:example/kit.git',
+        gitStrategy: 'none',
+        machines: { lnx: { type: 'linux', user: 'alice' } },
+      })
+    );
+    const calls: { cmd: string; args: readonly string[] }[] = [];
+    const exec = {
+      run: async (cmd: string, args: readonly string[]) => {
+        calls.push({ cmd, args: Array.from(args) });
+        if (cmd === 'which' && args[0] === 'system-manager')
+          return { code: 0, stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '' };
+        if (cmd === 'which' && args[0] === 'home-manager')
+          return { code: 1, stdout: '', stderr: 'not found' };
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const ctx = await resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'lnx',
+      exec,
+    });
+    const result = await ctx.runRebuild();
+    expect(result.ok).toBe(true);
+    expect(
+      calls.find(
+        (c) =>
+          c.cmd === 'nix' &&
+          c.args[0] === 'run' &&
+          c.args[1] === 'github:nix-community/home-manager'
+      )
+    ).toBeDefined();
+  });
+
+  it('linux runRebuild surfaces system-manager failure without running home-manager', async () => {
+    writeFileSync(
+      join(dir, 'kit.config.json'),
+      JSON.stringify({
+        name: 'kit',
+        repo: 'git@github.com:example/kit.git',
+        gitStrategy: 'none',
+        machines: { lnx: { type: 'linux', user: 'alice' } },
+      })
+    );
+    const calls: { cmd: string; args: readonly string[] }[] = [];
+    const exec = {
+      run: async (cmd: string, args: readonly string[]) => {
+        calls.push({ cmd, args: Array.from(args) });
+        if (cmd === 'which') return { code: 0, stdout: '/x/bin/system-manager\n', stderr: '' };
+        if (cmd === 'sudo') return { code: 1, stdout: '', stderr: 'sm failed' };
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const ctx = await resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'lnx',
+      exec,
+    });
+    const result = await ctx.runRebuild();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('sm failed');
+    // Must not have proceeded to home-manager.
+    expect(calls.find((c) => c.cmd === 'home-manager')).toBeUndefined();
+    expect(calls.find((c) => c.cmd === 'nix' && c.args[0] === 'run')).toBeUndefined();
+  });
 });
 
 describe('resolveKitContext.commitAndPush', () => {

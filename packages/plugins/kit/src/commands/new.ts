@@ -13,6 +13,16 @@ export interface ScaffoldOpts {
   machine: string;
   user: string;
   type?: 'darwin' | 'nixos' | 'linux';
+  /**
+   * Nix `system` string for the scaffolded machine (e.g. `"x86_64-linux"`,
+   * `"aarch64-linux"`). Embedded into the linux flake's `nixpkgs.hostPlatform`
+   * and `homeConfigurations` output so the generated flake evaluates under
+   * pure-eval mode (no reliance on `builtins.currentSystem`, which is not
+   * available there). Defaults to `aarch64-linux` when `type: 'linux'` and
+   * unset. Ignored for darwin/nixos templates (those hardcode the
+   * conventional values).
+   */
+  system?: string;
   exec: Exec;
 }
 
@@ -73,7 +83,7 @@ function nixosFlake(name: string, machine: string, user: string): string {
 `;
 }
 
-function linuxFlake(name: string, machine: string, _user: string): string {
+function linuxFlake(name: string, machine: string, user: string, system: string): string {
   return `{
   description = "${name} — managed by kit";
 
@@ -89,22 +99,37 @@ function linuxFlake(name: string, machine: string, _user: string): string {
     };
   };
 
-  outputs = { self, nixpkgs, system-manager, home-manager, ... }: {
-    # Non-NixOS Linux (Ubuntu, Debian, …) via system-manager + home-manager.
-    # Activate with:
-    #   sudo system-manager switch --flake .#${machine}
-    #   home-manager switch --flake .#${machine}
-    #
-    # Override the hostPlatform per-machine when scaffolding for arm64/aarch64
-    # (e.g. Apple Virtualization VMs): set \`nixpkgs.hostPlatform = "aarch64-linux";\`
-    # in machines/${machine}.nix or in the inline module below.
-    systemConfigs.${machine} = system-manager.lib.makeSystemConfig {
-      modules = [
-        ({ ... }: { nixpkgs.hostPlatform = builtins.currentSystem; })
-        ./machines/${machine}.nix
-      ];
+  outputs = { self, nixpkgs, system-manager, home-manager, ... }:
+    let
+      system = "${system}";
+      pkgs = nixpkgs.legacyPackages.\${system};
+    in {
+      # Non-NixOS Linux (Ubuntu, Debian, …) via system-manager + home-manager.
+      # Activate with two steps:
+      #   sudo system-manager switch --flake .#${machine}
+      #   home-manager switch --flake .#${machine}
+      systemConfigs.${machine} = system-manager.lib.makeSystemConfig {
+        modules = [
+          ({ ... }: { nixpkgs.hostPlatform = system; })
+          ./machines/${machine}.nix
+        ];
+      };
+
+      # home-manager standalone activation. \`pilot kit update\` runs
+      # \`home-manager switch --flake .#${machine}\` after the system-manager
+      # switch above, and that resolution requires \`homeConfigurations.<name>\`
+      # under pure-eval (the default for flakes).
+      homeConfigurations.${machine} = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          ({ ... }: {
+            home.username = "${user}";
+            home.homeDirectory = "/home/${user}";
+            home.stateVersion = "24.11";
+          })
+        ];
+      };
     };
-  };
 }
 `;
 }
@@ -158,11 +183,12 @@ export async function scaffoldKit(opts: ScaffoldOpts): Promise<void> {
   };
   writeFileSync(join(opts.target, 'kit.config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
+  const linuxSystem = opts.system ?? 'aarch64-linux';
   const flake =
     type === 'darwin'
       ? darwinFlake(opts.name, opts.machine, opts.user)
       : type === 'linux'
-        ? linuxFlake(opts.name, opts.machine, opts.user)
+        ? linuxFlake(opts.name, opts.machine, opts.user, linuxSystem)
         : nixosFlake(opts.name, opts.machine, opts.user);
   writeFileSync(join(opts.target, 'flake.nix'), flake);
 
