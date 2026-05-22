@@ -94,9 +94,13 @@ function linuxFlake(name: string, machine: string, _user: string): string {
     # Activate with:
     #   sudo system-manager switch --flake .#${machine}
     #   home-manager switch --flake .#${machine}
+    #
+    # Override the hostPlatform per-machine when scaffolding for arm64/aarch64
+    # (e.g. Apple Virtualization VMs): set \`nixpkgs.hostPlatform = "aarch64-linux";\`
+    # in machines/${machine}.nix or in the inline module below.
     systemConfigs.${machine} = system-manager.lib.makeSystemConfig {
       modules = [
-        ({ ... }: { nixpkgs.hostPlatform = "x86_64-linux"; })
+        ({ ... }: { nixpkgs.hostPlatform = builtins.currentSystem; })
         ./machines/${machine}.nix
       ];
     };
