@@ -42,13 +42,20 @@ function fail(err: unknown): never {
 /**
  * Pick a machine name from the config:
  *  1. explicit override (CLI arg or env)
- *  2. auto-detected hostname IF that name is in the config
- *  3. first machine in the config
+ *  2. auto-detected via the hostname-pattern map IF that name is in the config
+ *  3. raw hostname IF it is itself a key in `config.machines` (zero-config —
+ *     any user whose `hostname` matches a `machines.<name>` entry "just works",
+ *     no need to teach `detect.ts` about their fleet)
+ *  4. first machine in the config (warned)
  *
- * Throws if the override or detection produced a name that isn't configured —
- * we don't want to silently operate against an unrelated machine.
+ * Throws if the override produced a name that isn't configured — we don't
+ * want to silently operate against an unrelated machine.
  */
-function resolveMachine(config: LoadedKitConfig, override?: string): string {
+function resolveMachine(
+  config: LoadedKitConfig,
+  override?: string,
+  host: string = hostname()
+): string {
   const known = Object.keys(config.machines);
   if (known.length === 0) {
     console.error('kit.config.json has no machines configured.');
@@ -66,8 +73,18 @@ function resolveMachine(config: LoadedKitConfig, override?: string): string {
     return override;
   }
 
-  const detected = detectMachine(hostname());
+  const detected = detectMachine(host);
   if (detected && config.machines[detected]) return detected;
+
+  // Hostname is itself a configured machine name. This is the "zero-config"
+  // resolution path: a user can register `machines.<their-hostname>` in
+  // kit.config.json and get correct routing without adding a pattern to
+  // `detect.ts`. Particularly important on Linux machines whose hostnames
+  // (e.g. `ali-ubuntu`, `dev-vm`, anything from `hostnamectl set-hostname`)
+  // don't match the darwin-fleet patterns the pattern map ships with.
+  const hostShort = host.split('.')[0];
+  if (config.machines[host]) return host;
+  if (hostShort !== host && config.machines[hostShort]) return hostShort;
 
   // Detection produced something not in this config (or nothing at all). Fall back to first
   // configured machine — but tell the user, since they might be on the wrong machine entirely.
