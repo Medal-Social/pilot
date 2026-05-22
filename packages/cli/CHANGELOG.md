@@ -1,5 +1,43 @@
 # @medalsocial/pilot
 
+## 0.7.0
+
+### Minor Changes
+
+- [#150](https://github.com/Medal-Social/Pilot/pull/150) [`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46) Thanks [@alioftech](https://github.com/alioftech)! - medal-connect plan 2: pilot CLI side of the pair flow.
+
+  - `pilot connect` — generates ephemeral ECDH keypair, posts to Medal Social,
+    prints code, polls until claimed, ECDH-unseals the device token, stores it
+    in the OS keychain (via @napi-rs/keyring), opens WS to the per-workspace
+    Durable Object, starts 5min heartbeat backstop.
+  - `pilot disconnect <deviceId>` — revokes locally + tombstones in Convex +
+    drops live socket via Worker /devices/<wsId>/revoke.
+  - New medal-connect/ subdir: keychain, ECDH (P-256 + AES-GCM), frames (zod),
+    WSClient with reconnect + since-rev resume, HeartbeatLoop (5min app-level).
+  - Shell completions (bash/zsh/fish) updated.
+  - Adds `@napi-rs/keyring`, `ws`, `@types/ws`, `open` deps.
+
+- [#150](https://github.com/Medal-Social/Pilot/pull/150) [`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46) Thanks [@alioftech](https://github.com/alioftech)! - medal-connect Plan 3: kit registers as the first MedalConnectProvider.
+
+  `pilot connect` now pushes a `kit.state` snapshot on first connect and routes
+  incoming `kit.rebuild` / `kit.cask.add` / `kit.cask.remove` commands through to
+  the existing kit machinery. Provider lifecycle events flow back as
+  medalConnectEvents activity feed entries.
+
+- [#150](https://github.com/Medal-Social/Pilot/pull/150) [`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46) Thanks [@alioftech](https://github.com/alioftech)! - medal-connect: kit.apply-patch-and-rebuild verb.
+
+  Applies a structured KitPatch (cask add/remove + non-secret raw .nix writes), commits + pushes, runs rebuild. Hard-rejects writes to `secrets/*`, `.git/*`, and `.medal-connect/*` paths (case-insensitive); rejects path traversal, absolute paths, and writes through symlinked ancestors. The CLI's `pilot connect` flow now passes `resolveAppsFile` into the kit provider so cask ops always target the machine-resolved apps file (`machines/<m>.apps.json` post-migration; legacy `apps/apps.json` fallback).
+
+### Patch Changes
+
+- [#150](https://github.com/Medal-Social/Pilot/pull/150) [`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46) Thanks [@alioftech](https://github.com/alioftech)! - Add kit `linux` platform (system-manager + home-manager) so `pilot kit init`, `pilot kit update`, and `pilot kit new --type linux` work on non-NixOS systemd Linux distros (Ubuntu, Debian, etc.). The third `type` in `kit.config.json.machines.*` activates `sudo system-manager switch` followed by `home-manager switch` (with a `nix run` fallback on first bootstrap).
+
+- [#150](https://github.com/Medal-Social/Pilot/pull/150) [`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46) Thanks [@alioftech](https://github.com/alioftech)! - Two release-quality fixes:
+  - The auto-generated Homebrew tap formula now ships with an explicit `version` field and URLs pinned to the release tag, so `brew upgrade pilot` actually upgrades. Previously the formula used `releases/latest` URLs and no version field, making `brew upgrade pilot` a no-op until a human pushed a manual correction on top of each tap PR.
+  - `pilot kit init` now exits non-zero when refusing on `gitStrategy=none` (and on any other KitError). Shell scripts wrapping the command can detect the refusal via exit code instead of having to grep stderr.
+- Updated dependencies [[`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46), [`f7b59cf`](https://github.com/Medal-Social/Pilot/commit/f7b59cf1604f96778325bfbad91ab0840153bc46)]:
+  - @medalsocial/kit@0.4.0
+
 ## 0.6.0
 
 ### Minor Changes
