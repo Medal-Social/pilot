@@ -318,6 +318,25 @@ function findInDir(root: string, target: string): string | null {
   return null;
 }
 
+/**
+ * Well-known absolute paths the Determinate / official Nix installers create.
+ * sudo strips PATH; `which` may also miss `nix` in non-login agent sessions.
+ */
+const NIX_FALLBACK_PATHS = [
+  '/nix/var/nix/profiles/default/bin/nix',
+  '/run/current-system/sw/bin/nix',
+];
+
+async function resolveNixBinForConnect(exec: Exec): Promise<string | null> {
+  const whichNix = await exec.run('which', ['nix']);
+  if (whichNix.code === 0 && whichNix.stdout.trim()) return whichNix.stdout.trim();
+  for (const candidate of NIX_FALLBACK_PATHS) {
+    const check = await exec.run('test', ['-x', candidate]);
+    if (check.code === 0) return candidate;
+  }
+  return null;
+}
+
 async function runConnectSystemManager(
   exec: Exec,
   machineId: string,
@@ -330,9 +349,18 @@ async function runConnectSystemManager(
     });
   }
   // Bootstrap fallback so remote rebuilds work on fresh hosts where
-  // `system-manager` is not yet installed via nix profile.
-  const whichNix = await exec.run('which', ['nix']);
-  const nixBin = whichNix.code === 0 && whichNix.stdout.trim() ? whichNix.stdout.trim() : 'nix';
+  // `system-manager` is not yet installed via nix profile. Resolve `nix`
+  // absolute path because sudo strips PATH and `which` may miss it in
+  // non-login agent sessions (Codex P1 sweep).
+  const nixBin = await resolveNixBinForConnect(exec);
+  if (!nixBin) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr:
+        'Could not locate `nix` to bootstrap system-manager on this machine. Install Nix (https://install.determinate.systems/nix) and retry the remote rebuild.',
+    };
+  }
   return exec.run(
     'sudo',
     [nixBin, 'run', 'github:numtide/system-manager', '--', 'switch', '--flake', `.#${machineId}`],

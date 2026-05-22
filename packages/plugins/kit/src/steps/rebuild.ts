@@ -55,6 +55,29 @@ async function rebuildLinux(ctx: StepContext, machine: string, repoDir: string):
   if (hm.code !== 0) throw new KitError(errorCodes.KIT_REBUILD_FAILED, hm.stderr);
 }
 
+/**
+ * Well-known absolute paths the Determinate / official Nix installers create.
+ * `sudo` strips PATH, so we need the absolute path; `which` may also miss
+ * `nix` in non-login shells where /etc/profile.d/nix.sh hasn't been sourced.
+ */
+const NIX_FALLBACK_PATHS = [
+  '/nix/var/nix/profiles/default/bin/nix',
+  '/run/current-system/sw/bin/nix',
+];
+
+async function resolveNixBin(ctx: StepContext): Promise<string | null> {
+  const whichNix = await ctx.exec.run('which', ['nix']);
+  if (whichNix.code === 0 && whichNix.stdout.trim()) return whichNix.stdout.trim();
+  // `which` came up empty (or PATH didn't include the Nix profile). Try
+  // canonical install locations before giving up — `sudo` can run from
+  // these directly without PATH lookups (Codex P1 sweep).
+  for (const candidate of NIX_FALLBACK_PATHS) {
+    const check = await ctx.exec.run('test', ['-x', candidate]);
+    if (check.code === 0) return candidate;
+  }
+  return null;
+}
+
 async function runSystemManager(
   ctx: StepContext,
   machine: string,
@@ -69,8 +92,15 @@ async function runSystemManager(
   // Bootstrap fallback: `system-manager` isn't installed yet. Run it via
   // `nix run` so the first activation works on a fresh machine where only
   // Nix itself is present. Resolve `nix` absolute path because sudo strips PATH.
-  const whichNix = await ctx.exec.run('which', ['nix']);
-  const nixBin = whichNix.code === 0 && whichNix.stdout.trim() ? whichNix.stdout.trim() : 'nix';
+  const nixBin = await resolveNixBin(ctx);
+  if (!nixBin) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr:
+        'Could not locate `nix` to bootstrap system-manager. Install Nix (https://install.determinate.systems/nix) and retry.',
+    };
+  }
   return ctx.exec.run(
     'sudo',
     [nixBin, 'run', 'github:numtide/system-manager', '--', 'switch', '--flake', `.#${machine}`],

@@ -225,6 +225,85 @@ describe('resolveKitContext', () => {
     // Bare-name `sudo system-manager …` must NOT be attempted (Codex P1 sweep).
     expect(calls.find((c) => c.cmd === 'sudo' && c.args[0] === 'system-manager')).toBeUndefined();
   });
+
+  it('linux runRebuild probes Determinate Nix path when `which nix` misses (non-login agent session)', async () => {
+    writeFileSync(
+      join(dir, 'kit.config.json'),
+      JSON.stringify({
+        name: 'kit',
+        repo: 'git@github.com:example/kit.git',
+        gitStrategy: 'none',
+        machines: { lnx: { type: 'linux', user: 'alice' } },
+      })
+    );
+    const calls: { cmd: string; args: readonly string[] }[] = [];
+    const exec = {
+      run: async (cmd: string, args: readonly string[]) => {
+        calls.push({ cmd, args: Array.from(args) });
+        if (cmd === 'which' && args[0] === 'system-manager')
+          return { code: 1, stdout: '', stderr: 'not found' };
+        if (cmd === 'which' && args[0] === 'nix')
+          return { code: 1, stdout: '', stderr: 'not found' };
+        if (
+          cmd === 'test' &&
+          args[0] === '-x' &&
+          args[1] === '/nix/var/nix/profiles/default/bin/nix'
+        )
+          return { code: 0, stdout: '', stderr: '' };
+        if (cmd === 'which' && args[0] === 'home-manager')
+          return { code: 0, stdout: '/home/alice/.nix-profile/bin/home-manager\n', stderr: '' };
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const ctx = await resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'lnx',
+      exec,
+    });
+    const result = await ctx.runRebuild();
+    expect(result.ok).toBe(true);
+    // Sudo invocation must use the resolved canonical path, never bare `nix`.
+    expect(
+      calls.find(
+        (c) =>
+          c.cmd === 'sudo' &&
+          c.args[0] === '/nix/var/nix/profiles/default/bin/nix' &&
+          c.args[1] === 'run'
+      )
+    ).toBeDefined();
+    expect(calls.find((c) => c.cmd === 'sudo' && c.args[0] === 'nix')).toBeUndefined();
+  });
+
+  it('linux runRebuild returns a helpful failure when nix cannot be located', async () => {
+    writeFileSync(
+      join(dir, 'kit.config.json'),
+      JSON.stringify({
+        name: 'kit',
+        repo: 'git@github.com:example/kit.git',
+        gitStrategy: 'none',
+        machines: { lnx: { type: 'linux', user: 'alice' } },
+      })
+    );
+    const calls: { cmd: string; args: readonly string[] }[] = [];
+    const exec = {
+      run: async (cmd: string, args: readonly string[]) => {
+        calls.push({ cmd, args: Array.from(args) });
+        if (cmd === 'which') return { code: 1, stdout: '', stderr: 'not found' };
+        if (cmd === 'test') return { code: 1, stdout: '', stderr: '' };
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const ctx = await resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'lnx',
+      exec,
+    });
+    const result = await ctx.runRebuild();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Could not locate `nix`');
+    // Must not have shelled out to bare `nix` under sudo.
+    expect(calls.find((c) => c.cmd === 'sudo' && c.args[0] === 'nix')).toBeUndefined();
+  });
 });
 
 describe('resolveKitContext.commitAndPush', () => {

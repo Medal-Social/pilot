@@ -206,6 +206,79 @@ describe('rebuildStep', () => {
       expect(sudoSm).toBeUndefined();
     });
 
+    it('probes Determinate Nix install path when `which nix` also misses (non-login session)', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+          if (cmd === 'which' && args[0] === 'system-manager')
+            return { stdout: '', stderr: 'not found', code: 1 };
+          if (cmd === 'which' && args[0] === 'nix')
+            return { stdout: '', stderr: 'not found', code: 1 };
+          if (
+            cmd === 'test' &&
+            args[0] === '-x' &&
+            args[1] === '/nix/var/nix/profiles/default/bin/nix'
+          )
+            return { stdout: '', stderr: '', code: 0 };
+          if (cmd === 'which' && args[0] === 'home-manager')
+            return { stdout: '/x/bin/home-manager', stderr: '', code: 0 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await rebuildStep.run({
+        exec,
+        env: {
+          KIT_MACHINE_TYPE: 'linux',
+          KIT_MACHINE: 'my-vm',
+          KIT_REPO_DIR: '/home/alice/kit',
+        },
+      });
+      // Falls back to the Determinate canonical path under sudo (Codex P1 sweep —
+      // bare-name `nix` would never have resolved under sudo).
+      expect(exec.run).toHaveBeenCalledWith(
+        'sudo',
+        [
+          '/nix/var/nix/profiles/default/bin/nix',
+          'run',
+          'github:numtide/system-manager',
+          '--',
+          'switch',
+          '--flake',
+          '.#my-vm',
+        ],
+        { cwd: '/home/alice/kit' }
+      );
+      // Bare-name `sudo nix …` must never be attempted.
+      const bareNix = (exec.run as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c) => c[0] === 'sudo' && c[1]?.[0] === 'nix'
+      );
+      expect(bareNix).toBeUndefined();
+    });
+
+    it('throws KIT_REBUILD_FAILED with a helpful cause when neither system-manager nor nix can be located', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string) => {
+          if (cmd === 'which') return { stdout: '', stderr: 'not found', code: 1 };
+          if (cmd === 'test') return { stdout: '', stderr: '', code: 1 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await expect(
+        rebuildStep.run({
+          exec,
+          env: {
+            KIT_MACHINE_TYPE: 'linux',
+            KIT_MACHINE: 'my-vm',
+            KIT_REPO_DIR: '/home/alice/kit',
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'KIT_REBUILD_FAILED',
+        cause: expect.stringContaining('Could not locate `nix`'),
+      });
+    });
+
     it('throws when system-manager switch fails', async () => {
       const exec = {
         run: vi.fn().mockImplementation(async (cmd: string) => {
