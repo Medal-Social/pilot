@@ -151,6 +151,41 @@ describe('resolveMachine', () => {
     err.mockRestore();
   });
 
+  it('returns the raw hostname when it is a direct key in config.machines (dynamic, no pattern needed)', () => {
+    // Custom hostname not matched by any MACHINE_PATTERNS, but registered
+    // directly in kit.config.json. Should resolve without anyone having to
+    // teach `detect.ts` about it — the whole point of this fallback.
+    vi.mocked(detectMachine).mockReturnValueOnce(null);
+    const cfg = {
+      ...baseConfig,
+      machines: { ...baseConfig.machines, 'my-vm': { type: 'linux' as const, user: 'me' } },
+    };
+    expect(resolveMachine(cfg, undefined, 'my-vm')).toBe('my-vm');
+  });
+
+  it('strips the FQDN suffix when looking up hostname as a config key', () => {
+    // `hostname()` on some systems returns the full FQDN (e.g. `my-vm.local`);
+    // accept that by also trying the short form.
+    vi.mocked(detectMachine).mockReturnValueOnce(null);
+    const cfg = {
+      ...baseConfig,
+      machines: { ...baseConfig.machines, 'my-vm': { type: 'linux' as const, user: 'me' } },
+    };
+    expect(resolveMachine(cfg, undefined, 'my-vm.local')).toBe('my-vm');
+  });
+
+  it('prefers the pattern-based match over the raw-hostname match when both apply', () => {
+    // A `pro`-pattern hostname AND a literal config entry for that hostname:
+    // the curated pattern mapping wins because it routes via the intentional
+    // shorthand (e.g. `pro` → `ali-pro`).
+    vi.mocked(detectMachine).mockReturnValueOnce('ali-pro');
+    const cfg = {
+      ...baseConfig,
+      machines: { ...baseConfig.machines, 'ali-pro-2': { type: 'darwin' as const, user: 'a' } },
+    };
+    expect(resolveMachine(cfg, undefined, 'ali-pro-2')).toBe('ali-pro');
+  });
+
   it('exits when config has no machines', () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation(((_code?: number) => {
       throw new Error('exit');
