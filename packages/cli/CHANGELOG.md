@@ -1,5 +1,11 @@
 # @medalsocial/pilot
 
+## 0.7.1
+
+### Patch Changes
+
+- [#156](https://github.com/Medal-Social/Pilot/pull/156) [`72ce66a`](https://github.com/Medal-Social/Pilot/commit/72ce66ad9b5cff5661e71044a1f313f028901299) Thanks [@alioftech](https://github.com/alioftech)! - Pilot now correctly identifies the active machine when its hostname matches a configured machine name, in addition to the built-in pattern map. Fixes a silent fallback where Pilot would route commands to the first configured machine on hosts whose hostname didn't match one of the built-in patterns.
+
 ## 0.7.0
 
 ### Minor Changes
