@@ -22,18 +22,6 @@ function getRepoDir(ctx: StepContext): string {
   return dir;
 }
 
-/**
- * Resolve a binary's absolute path via `which`. Falls back to the bare name
- * when `which` fails (caller can decide what to do); we use this to feed
- * absolute paths into `sudo`, which strips PATH and otherwise can't find
- * binaries installed under ~/.nix-profile/bin.
- */
-async function resolveBin(ctx: StepContext, name: string): Promise<string> {
-  const r = await ctx.exec.run('which', [name]);
-  const resolved = r.code === 0 ? r.stdout.trim() : '';
-  return resolved || name;
-}
-
 async function rebuildDarwin(ctx: StepContext, machine: string, repoDir: string): Promise<void> {
   const r = await ctx.exec.run('sudo', ['darwin-rebuild', 'switch', '--flake', `.#${machine}`], {
     cwd: repoDir,
@@ -51,28 +39,59 @@ async function rebuildNixos(ctx: StepContext, machine: string, repoDir: string):
 /**
  * Linux (non-NixOS) rebuild via numtide/system-manager + nix-community/home-manager.
  * Runs as two sequential activations:
- *   1. `sudo system-manager switch --flake .#<machine>` — system layer
- *      (resolved via `which` because sudo strips PATH)
- *   2. `home-manager switch --flake .#<machine>` — user layer
- *      (uses `nix run` if home-manager isn't on PATH yet, e.g. first bootstrap)
+ *   1. `sudo system-manager switch --flake .#<machine>` — system layer.
+ *      Resolved via `which` (because sudo strips PATH and the binary lives
+ *      under ~/.nix-profile/bin); falls back to `sudo nix run github:numtide/system-manager`
+ *      when neither is on PATH yet (fresh machine, before any
+ *      `nix profile add github:numtide/system-manager`).
+ *   2. `home-manager switch --flake .#<machine>` — user layer.
+ *      Same pattern: prefer the installed binary, fall back to `nix run`.
  */
 async function rebuildLinux(ctx: StepContext, machine: string, repoDir: string): Promise<void> {
-  const smBin = await resolveBin(ctx, 'system-manager');
-  const sm = await ctx.exec.run('sudo', [smBin, 'switch', '--flake', `.#${machine}`], {
-    cwd: repoDir,
-  });
+  const sm = await runSystemManager(ctx, machine, repoDir);
   if (sm.code !== 0) throw new KitError(errorCodes.KIT_REBUILD_FAILED, sm.stderr);
 
-  const hmCheck = await ctx.exec.run('which', ['home-manager']);
-  const hm =
-    hmCheck.code === 0
-      ? await ctx.exec.run('home-manager', ['switch', '--flake', `.#${machine}`], { cwd: repoDir })
-      : await ctx.exec.run(
-          'nix',
-          ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', `.#${machine}`],
-          { cwd: repoDir }
-        );
+  const hm = await runHomeManager(ctx, machine, repoDir);
   if (hm.code !== 0) throw new KitError(errorCodes.KIT_REBUILD_FAILED, hm.stderr);
+}
+
+async function runSystemManager(
+  ctx: StepContext,
+  machine: string,
+  repoDir: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const whichSm = await ctx.exec.run('which', ['system-manager']);
+  if (whichSm.code === 0 && whichSm.stdout.trim()) {
+    return ctx.exec.run('sudo', [whichSm.stdout.trim(), 'switch', '--flake', `.#${machine}`], {
+      cwd: repoDir,
+    });
+  }
+  // Bootstrap fallback: `system-manager` isn't installed yet. Run it via
+  // `nix run` so the first activation works on a fresh machine where only
+  // Nix itself is present. Resolve `nix` absolute path because sudo strips PATH.
+  const whichNix = await ctx.exec.run('which', ['nix']);
+  const nixBin = whichNix.code === 0 && whichNix.stdout.trim() ? whichNix.stdout.trim() : 'nix';
+  return ctx.exec.run(
+    'sudo',
+    [nixBin, 'run', 'github:numtide/system-manager', '--', 'switch', '--flake', `.#${machine}`],
+    { cwd: repoDir }
+  );
+}
+
+async function runHomeManager(
+  ctx: StepContext,
+  machine: string,
+  repoDir: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const whichHm = await ctx.exec.run('which', ['home-manager']);
+  if (whichHm.code === 0 && whichHm.stdout.trim()) {
+    return ctx.exec.run('home-manager', ['switch', '--flake', `.#${machine}`], { cwd: repoDir });
+  }
+  return ctx.exec.run(
+    'nix',
+    ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', `.#${machine}`],
+    { cwd: repoDir }
+  );
 }
 
 export const rebuildStep: Step = {

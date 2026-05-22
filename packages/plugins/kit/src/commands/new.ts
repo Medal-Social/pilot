@@ -159,6 +159,17 @@ in {
 `;
 }
 
+/**
+ * Default Nix `system` string for a linux scaffold when the caller does not
+ * pass one. Derives from `process.arch` so a kit scaffolded on an x86_64
+ * host produces an `x86_64-linux` flake, not an `aarch64-linux` one.
+ * Falls back to `x86_64-linux` for unknown architectures since it remains
+ * the most common Linux target.
+ */
+function defaultLinuxSystem(): string {
+  return process.arch === 'arm64' ? 'aarch64-linux' : 'x86_64-linux';
+}
+
 async function runGit(exec: Exec, args: string[], cwd: string, what: string): Promise<void> {
   const r = await exec.run('git', args, { cwd });
   if (r.code !== 0) {
@@ -183,7 +194,7 @@ export async function scaffoldKit(opts: ScaffoldOpts): Promise<void> {
   };
   writeFileSync(join(opts.target, 'kit.config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
-  const linuxSystem = opts.system ?? 'aarch64-linux';
+  const linuxSystem = opts.system ?? defaultLinuxSystem();
   const flake =
     type === 'darwin'
       ? darwinFlake(opts.name, opts.machine, opts.user)

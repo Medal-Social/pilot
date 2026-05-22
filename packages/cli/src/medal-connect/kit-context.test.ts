@@ -177,7 +177,53 @@ describe('resolveKitContext', () => {
     expect(result.error).toContain('sm failed');
     // Must not have proceeded to home-manager.
     expect(calls.find((c) => c.cmd === 'home-manager')).toBeUndefined();
+    // Note: presence of `nix run` in calls would indicate the bootstrap fallback
+    // was taken; here `which system-manager` succeeded, so we want the installed
+    // path only and no fallback.
     expect(calls.find((c) => c.cmd === 'nix' && c.args[0] === 'run')).toBeUndefined();
+  });
+
+  it('linux runRebuild falls back to `sudo nix run github:numtide/system-manager` when system-manager is not installed (fresh remote rebuild)', async () => {
+    writeFileSync(
+      join(dir, 'kit.config.json'),
+      JSON.stringify({
+        name: 'kit',
+        repo: 'git@github.com:example/kit.git',
+        gitStrategy: 'none',
+        machines: { lnx: { type: 'linux', user: 'alice' } },
+      })
+    );
+    const calls: { cmd: string; args: readonly string[] }[] = [];
+    const exec = {
+      run: async (cmd: string, args: readonly string[]) => {
+        calls.push({ cmd, args: Array.from(args) });
+        if (cmd === 'which' && args[0] === 'system-manager')
+          return { code: 1, stdout: '', stderr: 'not found' };
+        if (cmd === 'which' && args[0] === 'nix')
+          return { code: 0, stdout: '/nix/var/nix/profiles/default/bin/nix\n', stderr: '' };
+        if (cmd === 'which' && args[0] === 'home-manager')
+          return { code: 0, stdout: '/home/alice/.nix-profile/bin/home-manager\n', stderr: '' };
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const ctx = await resolveKitContext({
+      kitConfigPath: join(dir, 'kit.config.json'),
+      machineId: 'lnx',
+      exec,
+    });
+    const result = await ctx.runRebuild();
+    expect(result.ok).toBe(true);
+    expect(
+      calls.find(
+        (c) =>
+          c.cmd === 'sudo' &&
+          c.args[0] === '/nix/var/nix/profiles/default/bin/nix' &&
+          c.args[1] === 'run' &&
+          c.args[2] === 'github:numtide/system-manager'
+      )
+    ).toBeDefined();
+    // Bare-name `sudo system-manager …` must NOT be attempted (Codex P1 sweep).
+    expect(calls.find((c) => c.cmd === 'sudo' && c.args[0] === 'system-manager')).toBeUndefined();
   });
 });
 

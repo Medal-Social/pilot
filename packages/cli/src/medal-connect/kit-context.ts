@@ -130,14 +130,12 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
 
       if (machineType === 'linux') {
         // Linux (non-NixOS) goes through system-manager (system layer) then
-        // home-manager (user layer). Resolve `system-manager` via `which`
-        // because sudo strips PATH and the binary lives under ~/.nix-profile.
-        const whichSm = await exec.run('which', ['system-manager']);
-        const smBin =
-          whichSm.code === 0 && whichSm.stdout.trim() ? whichSm.stdout.trim() : 'system-manager';
-        const sm = await exec.run('sudo', [smBin, 'switch', '--flake', `.#${opts.machineId}`], {
-          cwd: kitRepoDir,
-        });
+        // home-manager (user layer). Prefer the installed binary (resolved
+        // via `which` because sudo strips PATH and Nix binaries live under
+        // ~/.nix-profile/bin); fall back to `sudo nix run …` so remote
+        // rebuilds also work on fresh hosts where the binaries are not yet
+        // installed (Codex P1 sweep).
+        const sm = await runConnectSystemManager(exec, opts.machineId, kitRepoDir);
         if (sm.code !== 0) {
           return {
             ok: false,
@@ -145,24 +143,7 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
             error: sm.stderr.slice(0, 500),
           };
         }
-        const whichHm = await exec.run('which', ['home-manager']);
-        const hm =
-          whichHm.code === 0
-            ? await exec.run('home-manager', ['switch', '--flake', `.#${opts.machineId}`], {
-                cwd: kitRepoDir,
-              })
-            : await exec.run(
-                'nix',
-                [
-                  'run',
-                  'github:nix-community/home-manager',
-                  '--',
-                  'switch',
-                  '--flake',
-                  `.#${opts.machineId}`,
-                ],
-                { cwd: kitRepoDir }
-              );
+        const hm = await runConnectHomeManager(exec, opts.machineId, kitRepoDir);
         return {
           ok: hm.code === 0,
           durationMs: Date.now() - start,
@@ -335,6 +316,44 @@ function findInDir(root: string, target: string): string | null {
     }
   }
   return null;
+}
+
+async function runConnectSystemManager(
+  exec: Exec,
+  machineId: string,
+  cwd: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const whichSm = await exec.run('which', ['system-manager']);
+  if (whichSm.code === 0 && whichSm.stdout.trim()) {
+    return exec.run('sudo', [whichSm.stdout.trim(), 'switch', '--flake', `.#${machineId}`], {
+      cwd,
+    });
+  }
+  // Bootstrap fallback so remote rebuilds work on fresh hosts where
+  // `system-manager` is not yet installed via nix profile.
+  const whichNix = await exec.run('which', ['nix']);
+  const nixBin = whichNix.code === 0 && whichNix.stdout.trim() ? whichNix.stdout.trim() : 'nix';
+  return exec.run(
+    'sudo',
+    [nixBin, 'run', 'github:numtide/system-manager', '--', 'switch', '--flake', `.#${machineId}`],
+    { cwd }
+  );
+}
+
+async function runConnectHomeManager(
+  exec: Exec,
+  machineId: string,
+  cwd: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const whichHm = await exec.run('which', ['home-manager']);
+  if (whichHm.code === 0 && whichHm.stdout.trim()) {
+    return exec.run('home-manager', ['switch', '--flake', `.#${machineId}`], { cwd });
+  }
+  return exec.run(
+    'nix',
+    ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', `.#${machineId}`],
+    { cwd }
+  );
 }
 
 function resolveRepoDir(repoDir: string, configPath: string): string {

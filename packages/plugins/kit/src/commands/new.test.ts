@@ -115,7 +115,7 @@ describe('scaffoldKit', () => {
     expect(existsSync(join(target, 'machines', 'ubuntu-vm.apps.json'))).toBe(false);
   });
 
-  it('defaults linux system to aarch64-linux when not provided', async () => {
+  it("defaults the linux system to the host's Nix system string (Codex P2 sweep — no hardcoded aarch64)", async () => {
     const exec = {
       run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
       spawn: vi.fn(),
@@ -130,7 +130,12 @@ describe('scaffoldKit', () => {
       exec,
     });
     const flake = readFileSync(join(target, 'flake.nix'), 'utf8');
-    expect(flake).toContain('aarch64-linux');
+    // `defaultLinuxSystem()` maps `process.arch === 'arm64'` to `aarch64-linux`
+    // and everything else (notably `x64`) to `x86_64-linux`. The test asserts
+    // the host-arch-matched default rather than a hardcoded one so the same
+    // test runs on both arm64 and x86_64 CI machines.
+    const expected = process.arch === 'arm64' ? 'aarch64-linux' : 'x86_64-linux';
+    expect(flake).toContain(expected);
   });
 
   it('respects an explicit x86_64-linux system override', async () => {

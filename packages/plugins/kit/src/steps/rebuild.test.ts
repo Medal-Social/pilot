@@ -164,11 +164,13 @@ describe('rebuildStep', () => {
       );
     });
 
-    it('falls back to bare binary name when `which system-manager` fails', async () => {
+    it('falls back to `sudo nix run github:numtide/system-manager` when system-manager is not on PATH (fresh bootstrap)', async () => {
       const exec = {
         run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
           if (cmd === 'which' && args[0] === 'system-manager')
             return { stdout: '', stderr: 'not found', code: 1 };
+          if (cmd === 'which' && args[0] === 'nix')
+            return { stdout: '/nix/var/nix/profiles/default/bin/nix\n', stderr: '', code: 0 };
           if (cmd === 'which' && args[0] === 'home-manager')
             return { stdout: '/x/bin/home-manager', stderr: '', code: 0 };
           return { stdout: '', stderr: '', code: 0 };
@@ -183,11 +185,25 @@ describe('rebuildStep', () => {
           KIT_REPO_DIR: '/home/alice/kit',
         },
       });
+      // System layer: sudo + absolute nix path + `nix run github:numtide/system-manager -- switch`.
       expect(exec.run).toHaveBeenCalledWith(
         'sudo',
-        ['system-manager', 'switch', '--flake', '.#my-vm'],
+        [
+          '/nix/var/nix/profiles/default/bin/nix',
+          'run',
+          'github:numtide/system-manager',
+          '--',
+          'switch',
+          '--flake',
+          '.#my-vm',
+        ],
         { cwd: '/home/alice/kit' }
       );
+      // Must NOT fall through to running the bare-name `sudo system-manager …`.
+      const sudoSm = (exec.run as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c) => c[0] === 'sudo' && c[1]?.[0] === 'system-manager'
+      );
+      expect(sudoSm).toBeUndefined();
     });
 
     it('throws when system-manager switch fails', async () => {
