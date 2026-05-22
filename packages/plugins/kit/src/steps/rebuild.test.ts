@@ -138,13 +138,15 @@ describe('rebuildStep', () => {
       });
     });
 
-    it('falls back to `nix run` when home-manager is not on PATH', async () => {
+    it('falls back to `<abs-nix> run` (not bare `nix`) when home-manager is not on PATH', async () => {
       const exec = {
         run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
           if (cmd === 'which' && args[0] === 'system-manager')
             return { stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '', code: 0 };
           if (cmd === 'which' && args[0] === 'home-manager')
             return { stdout: '', stderr: 'not found', code: 1 };
+          if (cmd === 'which' && args[0] === 'nix')
+            return { stdout: '/nix/var/nix/profiles/default/bin/nix\n', stderr: '', code: 0 };
           return { stdout: '', stderr: '', code: 0 };
         }),
         spawn: vi.fn(),
@@ -158,10 +160,16 @@ describe('rebuildStep', () => {
         },
       });
       expect(exec.run).toHaveBeenCalledWith(
-        'nix',
+        '/nix/var/nix/profiles/default/bin/nix',
         ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', '.#my-vm'],
         { cwd: '/home/alice/kit' }
       );
+      // Bare `nix run …` must not be attempted (Codex P1 sweep — non-login
+      // sessions can have nix installed but not on PATH).
+      const bareNix = (exec.run as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c) => c[0] === 'nix' && c[1]?.[0] === 'run'
+      );
+      expect(bareNix).toBeUndefined();
     });
 
     it('falls back to `sudo nix run github:numtide/system-manager` when system-manager is not on PATH (fresh bootstrap)', async () => {

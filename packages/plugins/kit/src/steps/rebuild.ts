@@ -117,8 +117,20 @@ async function runHomeManager(
   if (whichHm.code === 0 && whichHm.stdout.trim()) {
     return ctx.exec.run('home-manager', ['switch', '--flake', `.#${machine}`], { cwd: repoDir });
   }
+  // Bootstrap fallback: home-manager isn't installed yet. Same as
+  // runSystemManager — resolve `nix` to an absolute path so the call
+  // succeeds in non-login sessions where Nix is installed but not on PATH.
+  const nixBin = await resolveNixBin(ctx);
+  if (!nixBin) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr:
+        'Could not locate `nix` to bootstrap home-manager. Install Nix (https://install.determinate.systems/nix) and retry.',
+    };
+  }
   return ctx.exec.run(
-    'nix',
+    nixBin,
     ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', `.#${machine}`],
     { cwd: repoDir }
   );

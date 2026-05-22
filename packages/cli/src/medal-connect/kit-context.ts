@@ -377,8 +377,20 @@ async function runConnectHomeManager(
   if (whichHm.code === 0 && whichHm.stdout.trim()) {
     return exec.run('home-manager', ['switch', '--flake', `.#${machineId}`], { cwd });
   }
+  // Bootstrap fallback — same logic as runConnectSystemManager. Non-login
+  // agent sessions can have Nix installed but `nix` not on PATH, so we
+  // probe the canonical install paths before giving up (Codex P1 sweep).
+  const nixBin = await resolveNixBinForConnect(exec);
+  if (!nixBin) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr:
+        'Could not locate `nix` to bootstrap home-manager on this machine. Install Nix (https://install.determinate.systems/nix) and retry the remote rebuild.',
+    };
+  }
   return exec.run(
-    'nix',
+    nixBin,
     ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', `.#${machineId}`],
     { cwd }
   );

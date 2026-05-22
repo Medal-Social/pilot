@@ -110,7 +110,7 @@ describe('resolveKitContext', () => {
     expect(calls.find((c) => c.cmd === 'home-manager' && c.args[0] === 'switch')).toBeDefined();
   });
 
-  it('linux runRebuild falls back to `nix run` when home-manager is missing on PATH', async () => {
+  it('linux runRebuild falls back to `<abs-nix> run` (not bare `nix`) when home-manager is missing on PATH', async () => {
     writeFileSync(
       join(dir, 'kit.config.json'),
       JSON.stringify({
@@ -128,6 +128,8 @@ describe('resolveKitContext', () => {
           return { code: 0, stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '' };
         if (cmd === 'which' && args[0] === 'home-manager')
           return { code: 1, stdout: '', stderr: 'not found' };
+        if (cmd === 'which' && args[0] === 'nix')
+          return { code: 0, stdout: '/nix/var/nix/profiles/default/bin/nix\n', stderr: '' };
         return { code: 0, stdout: '', stderr: '' };
       },
     };
@@ -141,11 +143,13 @@ describe('resolveKitContext', () => {
     expect(
       calls.find(
         (c) =>
-          c.cmd === 'nix' &&
+          c.cmd === '/nix/var/nix/profiles/default/bin/nix' &&
           c.args[0] === 'run' &&
           c.args[1] === 'github:nix-community/home-manager'
       )
     ).toBeDefined();
+    // Bare `nix run …` (no sudo, user-layer) must not be attempted.
+    expect(calls.find((c) => c.cmd === 'nix' && c.args[0] === 'run')).toBeUndefined();
   });
 
   it('linux runRebuild surfaces system-manager failure without running home-manager', async () => {
