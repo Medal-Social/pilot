@@ -74,6 +74,90 @@ describe('scaffoldKit', () => {
     expect(machine).not.toContain('homebrew');
   });
 
+  it('scaffolds linux machines when requested', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const target = join(dir, 'linux-kit');
+
+    await scaffoldKit({
+      target,
+      name: 'linux-kit',
+      machine: 'ubuntu-vm',
+      user: 'alice',
+      type: 'linux',
+      system: 'aarch64-linux',
+      exec,
+    });
+
+    const cfg = JSON.parse(readFileSync(join(target, 'kit.config.json'), 'utf8'));
+    expect(cfg.machines['ubuntu-vm']).toEqual({ type: 'linux', user: 'alice' });
+
+    const flake = readFileSync(join(target, 'flake.nix'), 'utf8');
+    expect(flake).toContain('systemConfigs.ubuntu-vm');
+    expect(flake).toContain('numtide/system-manager');
+    expect(flake).not.toContain('nix-darwin');
+    // The flake must export a homeConfigurations entry — home-manager standalone
+    // requires it for `home-manager switch --flake .#<machine>` under pure-eval.
+    expect(flake).toContain('homeConfigurations.ubuntu-vm');
+    // System must be explicit (no reliance on builtins.currentSystem, which
+    // is unavailable in pure-flake eval).
+    expect(flake).toContain('aarch64-linux');
+    expect(flake).not.toContain('builtins.currentSystem');
+
+    const machine = readFileSync(join(target, 'machines', 'ubuntu-vm.nix'), 'utf8');
+    // system-manager rejects `networking.hostName` — linux scaffolds must not emit it.
+    expect(machine).not.toContain('networking.hostName');
+    expect(machine).toContain('environment.systemPackages');
+
+    // apps.json is darwin-only (Homebrew); linux scaffolds skip it.
+    expect(existsSync(join(target, 'machines', 'ubuntu-vm.apps.json'))).toBe(false);
+  });
+
+  it("defaults the linux system to the host's Nix system string (Codex P2 sweep — no hardcoded aarch64)", async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const target = join(dir, 'default-system');
+    await scaffoldKit({
+      target,
+      name: 'default-system',
+      machine: 'box',
+      user: 'alice',
+      type: 'linux',
+      exec,
+    });
+    const flake = readFileSync(join(target, 'flake.nix'), 'utf8');
+    // `defaultLinuxSystem()` maps `process.arch === 'arm64'` to `aarch64-linux`
+    // and everything else (notably `x64`) to `x86_64-linux`. The test asserts
+    // the host-arch-matched default rather than a hardcoded one so the same
+    // test runs on both arm64 and x86_64 CI machines.
+    const expected = process.arch === 'arm64' ? 'aarch64-linux' : 'x86_64-linux';
+    expect(flake).toContain(expected);
+  });
+
+  it('respects an explicit x86_64-linux system override', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const target = join(dir, 'amd64-linux');
+    await scaffoldKit({
+      target,
+      name: 'amd64-linux',
+      machine: 'box',
+      user: 'alice',
+      type: 'linux',
+      system: 'x86_64-linux',
+      exec,
+    });
+    const flake = readFileSync(join(target, 'flake.nix'), 'utf8');
+    expect(flake).toContain('x86_64-linux');
+    expect(flake).not.toContain('aarch64-linux');
+  });
+
   it('throws KitError when git init fails', async () => {
     const exec = {
       run: vi.fn().mockImplementation(async (_cmd: string, args: string[]) => {

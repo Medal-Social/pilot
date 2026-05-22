@@ -83,4 +83,51 @@ describe('initSteps', () => {
       { cwd: root }
     );
   });
+
+  it('runs init steps for a linux machine and routes to system-manager + home-manager', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kit-init-linux-'));
+    roots.push(root);
+    mkdirSync(join(root, '.git'), { recursive: true });
+    const exec = {
+      run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+        if (cmd === 'ssh')
+          return { stdout: '', stderr: 'Hi! You have successfully authenticated', code: 1 };
+        if (cmd === 'which' && args[0] === 'system-manager')
+          return { stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '', code: 0 };
+        if (cmd === 'which' && args[0] === 'home-manager')
+          return { stdout: '/home/alice/.nix-profile/bin/home-manager\n', stderr: '', code: 0 };
+        return { stdout: 'ok', stderr: '', code: 0 };
+      }),
+      spawn: vi.fn(),
+    };
+    const provider = {
+      id: 'test',
+      displayName: 'Test',
+      getRequiredApps: vi.fn(),
+      getRequiredPlugins: vi.fn(),
+      getSecurityBaseline: vi.fn(),
+      reportStatus: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await runInit({
+      machine: 'my-vm',
+      machineType: 'linux',
+      kitRepoDir: root,
+      kitRepoUrl: 'git@github.com:example/kit.git',
+      provider,
+      exec,
+      platform: 'linux',
+      arch: 'arm64',
+      user: 'alice',
+    });
+
+    expect(exec.run).toHaveBeenCalledWith(
+      'sudo',
+      ['/home/alice/.nix-profile/bin/system-manager', 'switch', '--flake', '.#my-vm'],
+      { cwd: root }
+    );
+    expect(exec.run).toHaveBeenCalledWith('home-manager', ['switch', '--flake', '.#my-vm'], {
+      cwd: root,
+    });
+  });
 });

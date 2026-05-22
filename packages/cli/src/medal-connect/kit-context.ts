@@ -127,6 +127,30 @@ export async function resolveKitContext(opts: ResolveOptions): Promise<KitContex
     machineType,
     runRebuild: async () => {
       const start = Date.now();
+
+      if (machineType === 'linux') {
+        // Linux (non-NixOS) goes through system-manager (system layer) then
+        // home-manager (user layer). Prefer the installed binary (resolved
+        // via `which` because sudo strips PATH and Nix binaries live under
+        // ~/.nix-profile/bin); fall back to `sudo nix run …` so remote
+        // rebuilds also work on fresh hosts where the binaries are not yet
+        // installed (Codex P1 sweep).
+        const sm = await runConnectSystemManager(exec, opts.machineId, kitRepoDir);
+        if (sm.code !== 0) {
+          return {
+            ok: false,
+            durationMs: Date.now() - start,
+            error: sm.stderr.slice(0, 500),
+          };
+        }
+        const hm = await runConnectHomeManager(exec, opts.machineId, kitRepoDir);
+        return {
+          ok: hm.code === 0,
+          durationMs: Date.now() - start,
+          error: hm.code === 0 ? undefined : hm.stderr.slice(0, 500),
+        };
+      }
+
       const cmd = machineType === 'darwin' ? 'darwin-rebuild' : 'nixos-rebuild';
       const r = await exec.run('sudo', [cmd, 'switch', '--flake', `.#${opts.machineId}`], {
         cwd: kitRepoDir,
@@ -292,6 +316,84 @@ function findInDir(root: string, target: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Well-known absolute paths the Determinate / official Nix installers create.
+ * sudo strips PATH; `which` may also miss `nix` in non-login agent sessions.
+ */
+const NIX_FALLBACK_PATHS = [
+  '/nix/var/nix/profiles/default/bin/nix',
+  '/run/current-system/sw/bin/nix',
+];
+
+async function resolveNixBinForConnect(exec: Exec): Promise<string | null> {
+  const whichNix = await exec.run('which', ['nix']);
+  if (whichNix.code === 0 && whichNix.stdout.trim()) return whichNix.stdout.trim();
+  for (const candidate of NIX_FALLBACK_PATHS) {
+    const check = await exec.run('test', ['-x', candidate]);
+    if (check.code === 0) return candidate;
+  }
+  return null;
+}
+
+async function runConnectSystemManager(
+  exec: Exec,
+  machineId: string,
+  cwd: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const whichSm = await exec.run('which', ['system-manager']);
+  if (whichSm.code === 0 && whichSm.stdout.trim()) {
+    return exec.run('sudo', [whichSm.stdout.trim(), 'switch', '--flake', `.#${machineId}`], {
+      cwd,
+    });
+  }
+  // Bootstrap fallback so remote rebuilds work on fresh hosts where
+  // `system-manager` is not yet installed via nix profile. Resolve `nix`
+  // absolute path because sudo strips PATH and `which` may miss it in
+  // non-login agent sessions (Codex P1 sweep).
+  const nixBin = await resolveNixBinForConnect(exec);
+  if (!nixBin) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr:
+        'Could not locate `nix` to bootstrap system-manager on this machine. Install Nix (https://install.determinate.systems/nix) and retry the remote rebuild.',
+    };
+  }
+  return exec.run(
+    'sudo',
+    [nixBin, 'run', 'github:numtide/system-manager', '--', 'switch', '--flake', `.#${machineId}`],
+    { cwd }
+  );
+}
+
+async function runConnectHomeManager(
+  exec: Exec,
+  machineId: string,
+  cwd: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const whichHm = await exec.run('which', ['home-manager']);
+  if (whichHm.code === 0 && whichHm.stdout.trim()) {
+    return exec.run('home-manager', ['switch', '--flake', `.#${machineId}`], { cwd });
+  }
+  // Bootstrap fallback — same logic as runConnectSystemManager. Non-login
+  // agent sessions can have Nix installed but `nix` not on PATH, so we
+  // probe the canonical install paths before giving up (Codex P1 sweep).
+  const nixBin = await resolveNixBinForConnect(exec);
+  if (!nixBin) {
+    return {
+      code: 127,
+      stdout: '',
+      stderr:
+        'Could not locate `nix` to bootstrap home-manager on this machine. Install Nix (https://install.determinate.systems/nix) and retry the remote rebuild.',
+    };
+  }
+  return exec.run(
+    nixBin,
+    ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', `.#${machineId}`],
+    { cwd }
+  );
 }
 
 function resolveRepoDir(repoDir: string, configPath: string): string {
