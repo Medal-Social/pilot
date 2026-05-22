@@ -52,6 +52,13 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # `gh pr view` is called before the actions/checkout step below
+          # (because checkout needs the resolved head_sha as its ref).
+          # Without GH_REPO, gh falls back to reading git config to infer
+          # the repo and dies with "fatal: not a git repository" on the
+          # issue_comment / workflow_dispatch branches. Pinning GH_REPO at
+          # the step level removes that dependency on a checkout.
+          GH_REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER_FROM_EVENT: ${{ github.event.pull_request.number }}
           PR_HEAD_REF_FROM_EVENT: ${{ github.event.pull_request.head.ref }}

@@ -18,6 +18,17 @@ describe('kitConfigSchema', () => {
     expect(() => kitConfigSchema.parse(valid)).not.toThrow();
   });
 
+  it('accepts linux (non-NixOS systemd Linux via system-manager)', () => {
+    const valid = {
+      name: 'kit',
+      repo: 'git@github.com:example/kit.git',
+      machines: {
+        'my-vm': { type: 'linux', user: 'alice' },
+      },
+    };
+    expect(() => kitConfigSchema.parse(valid)).not.toThrow();
+  });
+
   it('rejects an unknown machine type', () => {
     const invalid = {
       name: 'kit',

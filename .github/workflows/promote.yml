@@ -38,13 +38,25 @@ jobs:
           set -euo pipefail
           git fetch origin dev prod --quiet
 
-          # Pathspec must use :(glob) — git's default pathspec matching is
-          # literal, so '.changeset/*.md' would match a file LITERALLY named
-          # '*.md' and return empty (the bug that forced force=true on every
-          # manual promote prior to this fix).
+          # List .md files under .changeset/ on each branch. We do NOT use
+          # ':(glob).changeset/*.md' here: `git ls-tree` does not support
+          # `:(glob)` pathspec magic (that magic is for diff/ls-files/etc.)
+          # and the call would fail with `pathspec magic not supported by
+          # this command: 'glob'`, leaving `pending=0` and silently no-op'ing
+          # every scheduled promote. Filter to `.md` files via grep and
+          # explicitly exclude README + chore back-merge skip changesets
+          # (which are not real pending changesets — they always carry
+          # an empty frontmatter and are deleted by the next release).
+          list_changesets() {
+            git ls-tree -r "$1" --name-only -- .changeset/ \
+              | grep -E '\.md$' \
+              | grep -v -E '(^|/)README\.md$' \
+              | grep -v -E '(^|/)chore-backmerge-prod-into-dev-after-[^/]+-skip\.md$' \
+              | sort
+          }
           pending="$(comm -23 \
-            <(git ls-tree -r origin/dev --name-only -- ':(glob).changeset/*.md' | grep -v 'README.md' | sort) \
-            <(git ls-tree -r origin/prod --name-only -- ':(glob).changeset/*.md' | grep -v 'README.md' | sort) \
+            <(list_changesets origin/dev) \
+            <(list_changesets origin/prod) \
             | wc -l | tr -d ' ')"
 
           commits="$(git rev-list origin/prod..origin/dev --count)"
@@ -93,8 +105,33 @@ jobs:
           git config user.email "277925859+medal-social-release-bot[bot]@users.noreply.github.com"
 
           git checkout -B "$branch" origin/dev
+
+          # Pre-emptively delete stale back-merge skip changesets that exist
+          # on dev but were already consumed (deleted) on prod. These are the
+          # rename/delete victims that `git merge -X ours` cannot auto-resolve:
+          # `-X ours` only applies to *content* conflicts on files present on
+          # both sides — it doesn't help when one side deleted a file and the
+          # other kept it (the rename/delete class of conflict). Removing them
+          # up-front turns the merge into a clean one (release.yml will create
+          # a fresh skip changeset for THIS back-merge after this promote
+          # lands on prod).
+          stale_skips="$(comm -23 \
+            <(git ls-tree -r origin/dev --name-only -- .changeset/ \
+                | grep -E '(^|/)chore-backmerge-prod-into-dev-after-[^/]+-skip\.md$' \
+                | sort) \
+            <(git ls-tree -r origin/prod --name-only -- .changeset/ \
+                | grep -E '(^|/)chore-backmerge-prod-into-dev-after-[^/]+-skip\.md$' \
+                | sort) \
+            || true)"
+          if [ -n "$stale_skips" ]; then
+            echo "Removing stale back-merge skip changesets that prod already consumed:"
+            echo "$stale_skips"
+            echo "$stale_skips" | xargs -r git rm
+            git commit -m "chore: drop stale back-merge skip changesets pre-merge"
+          fi
+
           if ! git merge origin/prod --no-ff -X ours -m "chore: merge prod into promote branch (re-add prod ancestry)"; then
-            echo "::error::Auto-merge failed even with -X ours — there are unmergeable changes (likely both sides modified the same lines incompatibly). Resolve manually and re-run."
+            echo "::error::Auto-merge failed even with -X ours after stripping stale skip changesets — there are unmergeable changes (likely both sides modified the same lines incompatibly). Resolve manually and re-run."
             git merge --abort || true
             exit 1
           fi

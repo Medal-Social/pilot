@@ -46,7 +46,7 @@ const userMessages: Record<ErrorCode, string> = {
   KIT_SECRETS_INIT_FAILED:
     'Secrets setup failed. Inspect `scripts/secrets-init.sh detect` output, then re-run `pilot kit update`.',
   KIT_REBUILD_FAILED:
-    'System rebuild failed. Run `darwin-rebuild switch --flake .#<machine>` directly to see the full Nix error.',
+    'System rebuild failed. Run the underlying rebuild command directly to see the full Nix error: `darwin-rebuild switch --flake .#<machine>` (darwin), `nixos-rebuild switch --flake .#<machine>` (nixos), or `sudo system-manager switch --flake .#<machine>` + `home-manager switch --flake .#<machine>` (linux).',
   KIT_CONFIG_NOT_FOUND:
     'No kit.config.json found. Run `pilot kit new` for a fresh setup, or clone an existing kit repo to ~/Documents/Code/kit and try again.',
   KIT_CONFIG_INVALID:

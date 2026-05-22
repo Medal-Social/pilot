@@ -58,7 +58,7 @@ export interface UpdateHooks {
 
 export interface RunUpdateOpts {
   machine: string;
-  machineType: 'darwin' | 'nixos';
+  machineType: 'darwin' | 'nixos' | 'linux';
   kitRepoDir: string;
   /** "self" (default) → run git fetch + pull. "none" → skip git ops entirely. */
   gitStrategy?: 'self' | 'none';

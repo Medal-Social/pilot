@@ -12,7 +12,17 @@ export interface ScaffoldOpts {
   name: string;
   machine: string;
   user: string;
-  type?: 'darwin' | 'nixos';
+  type?: 'darwin' | 'nixos' | 'linux';
+  /**
+   * Nix `system` string for the scaffolded machine (e.g. `"x86_64-linux"`,
+   * `"aarch64-linux"`). Embedded into the linux flake's `nixpkgs.hostPlatform`
+   * and `homeConfigurations` output so the generated flake evaluates under
+   * pure-eval mode (no reliance on `builtins.currentSystem`, which is not
+   * available there). Defaults to `aarch64-linux` when `type: 'linux'` and
+   * unset. Ignored for darwin/nixos templates (those hardcode the
+   * conventional values).
+   */
+  system?: string;
   exec: Exec;
 }
 
@@ -73,7 +83,58 @@ function nixosFlake(name: string, machine: string, user: string): string {
 `;
 }
 
-function machineNix(machine: string, type: 'darwin' | 'nixos'): string {
+function linuxFlake(name: string, machine: string, user: string, system: string): string {
+  return `{
+  description = "${name} — managed by kit";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    system-manager = {
+      url = "github:numtide/system-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { self, nixpkgs, system-manager, home-manager, ... }:
+    let
+      system = "${system}";
+      pkgs = nixpkgs.legacyPackages.\${system};
+    in {
+      # Non-NixOS Linux (Ubuntu, Debian, …) via system-manager + home-manager.
+      # Activate with two steps:
+      #   sudo system-manager switch --flake .#${machine}
+      #   home-manager switch --flake .#${machine}
+      systemConfigs.${machine} = system-manager.lib.makeSystemConfig {
+        modules = [
+          ({ ... }: { nixpkgs.hostPlatform = system; })
+          ./machines/${machine}.nix
+        ];
+      };
+
+      # home-manager standalone activation. \`pilot kit update\` runs
+      # \`home-manager switch --flake .#${machine}\` after the system-manager
+      # switch above, and that resolution requires \`homeConfigurations.<name>\`
+      # under pure-eval (the default for flakes).
+      homeConfigurations.${machine} = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          ({ ... }: {
+            home.username = "${user}";
+            home.homeDirectory = "/home/${user}";
+            home.stateVersion = "24.11";
+          })
+        ];
+      };
+    };
+}
+`;
+}
+
+function machineNix(machine: string, type: 'darwin' | 'nixos' | 'linux'): string {
   if (type === 'darwin') {
     return `{ ... }: let
   apps = builtins.fromJSON (builtins.readFile ./${machine}.apps.json);
@@ -84,10 +145,29 @@ in {
 }
 `;
   }
+  if (type === 'linux') {
+    // system-manager doesn't accept networking.hostName (NixOS-only) — set
+    // the hostname imperatively (e.g. `sudo hostnamectl set-hostname …`).
+    return `{ pkgs, ... }: {
+  environment.systemPackages = with pkgs; [ git curl ];
+}
+`;
+  }
   return `{ ... }: {
   networking.hostName = "${machine}";
 }
 `;
+}
+
+/**
+ * Default Nix `system` string for a linux scaffold when the caller does not
+ * pass one. Derives from `process.arch` so a kit scaffolded on an x86_64
+ * host produces an `x86_64-linux` flake, not an `aarch64-linux` one.
+ * Falls back to `x86_64-linux` for unknown architectures since it remains
+ * the most common Linux target.
+ */
+function defaultLinuxSystem(): string {
+  return process.arch === 'arm64' ? 'aarch64-linux' : 'x86_64-linux';
 }
 
 async function runGit(exec: Exec, args: string[], cwd: string, what: string): Promise<void> {
@@ -114,22 +194,28 @@ export async function scaffoldKit(opts: ScaffoldOpts): Promise<void> {
   };
   writeFileSync(join(opts.target, 'kit.config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
-  writeFileSync(
-    join(opts.target, 'flake.nix'),
+  const linuxSystem = opts.system ?? defaultLinuxSystem();
+  const flake =
     type === 'darwin'
       ? darwinFlake(opts.name, opts.machine, opts.user)
-      : nixosFlake(opts.name, opts.machine, opts.user)
-  );
+      : type === 'linux'
+        ? linuxFlake(opts.name, opts.machine, opts.user, linuxSystem)
+        : nixosFlake(opts.name, opts.machine, opts.user);
+  writeFileSync(join(opts.target, 'flake.nix'), flake);
 
   writeFileSync(
     join(opts.target, 'machines', `${opts.machine}.nix`),
     machineNix(opts.machine, type)
   );
 
-  writeAppsJson(join(opts.target, 'machines', `${opts.machine}.apps.json`), {
-    casks: [],
-    brews: [],
-  });
+  // apps.json (Homebrew casks/brews) is darwin-only — system-manager has no
+  // declarative apt analog, so linux scaffolds skip the file.
+  if (type === 'darwin') {
+    writeAppsJson(join(opts.target, 'machines', `${opts.machine}.apps.json`), {
+      casks: [],
+      brews: [],
+    });
+  }
 
   writeFileSync(join(opts.target, '.gitignore'), `.envrc\n.direnv/\nresult\nsecrets.local/\n`);
 

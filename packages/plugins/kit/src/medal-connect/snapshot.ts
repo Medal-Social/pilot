@@ -93,7 +93,7 @@ function readLastRebuild(repoDir: string): { at?: number; ok?: boolean } {
 
 function profileFor(machineType: string): KitStateSnapshot['profile'] {
   if (machineType === 'nixos') return 'server';
-  if (machineType === 'darwin') return 'workstation';
+  if (machineType === 'darwin' || machineType === 'linux') return 'workstation';
   return 'minimal';
 }
 
