@@ -104,4 +104,137 @@ describe('rebuildStep', () => {
       })
     ).rejects.toThrow();
   });
+
+  describe('linux platform', () => {
+    it('runs system-manager + home-manager when home-manager is on PATH', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+          if (cmd === 'which' && args[0] === 'system-manager')
+            return { stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '', code: 0 };
+          if (cmd === 'which' && args[0] === 'home-manager')
+            return { stdout: '/home/alice/.nix-profile/bin/home-manager\n', stderr: '', code: 0 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await rebuildStep.run({
+        exec,
+        env: {
+          KIT_MACHINE_TYPE: 'linux',
+          KIT_MACHINE: 'my-vm',
+          KIT_REPO_DIR: '/home/alice/kit',
+        },
+      });
+      // Resolve binaries via `which` so sudo (PATH-stripped) can find them.
+      expect(exec.run).toHaveBeenCalledWith('which', ['system-manager']);
+      expect(exec.run).toHaveBeenCalledWith(
+        'sudo',
+        ['/home/alice/.nix-profile/bin/system-manager', 'switch', '--flake', '.#my-vm'],
+        { cwd: '/home/alice/kit' }
+      );
+      expect(exec.run).toHaveBeenCalledWith('which', ['home-manager']);
+      expect(exec.run).toHaveBeenCalledWith('home-manager', ['switch', '--flake', '.#my-vm'], {
+        cwd: '/home/alice/kit',
+      });
+    });
+
+    it('falls back to `nix run` when home-manager is not on PATH', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+          if (cmd === 'which' && args[0] === 'system-manager')
+            return { stdout: '/home/alice/.nix-profile/bin/system-manager\n', stderr: '', code: 0 };
+          if (cmd === 'which' && args[0] === 'home-manager')
+            return { stdout: '', stderr: 'not found', code: 1 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await rebuildStep.run({
+        exec,
+        env: {
+          KIT_MACHINE_TYPE: 'linux',
+          KIT_MACHINE: 'my-vm',
+          KIT_REPO_DIR: '/home/alice/kit',
+        },
+      });
+      expect(exec.run).toHaveBeenCalledWith(
+        'nix',
+        ['run', 'github:nix-community/home-manager', '--', 'switch', '--flake', '.#my-vm'],
+        { cwd: '/home/alice/kit' }
+      );
+    });
+
+    it('falls back to bare binary name when `which system-manager` fails', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+          if (cmd === 'which' && args[0] === 'system-manager')
+            return { stdout: '', stderr: 'not found', code: 1 };
+          if (cmd === 'which' && args[0] === 'home-manager')
+            return { stdout: '/x/bin/home-manager', stderr: '', code: 0 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await rebuildStep.run({
+        exec,
+        env: {
+          KIT_MACHINE_TYPE: 'linux',
+          KIT_MACHINE: 'my-vm',
+          KIT_REPO_DIR: '/home/alice/kit',
+        },
+      });
+      expect(exec.run).toHaveBeenCalledWith(
+        'sudo',
+        ['system-manager', 'switch', '--flake', '.#my-vm'],
+        { cwd: '/home/alice/kit' }
+      );
+    });
+
+    it('throws when system-manager switch fails', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string) => {
+          if (cmd === 'which') return { stdout: '/x/bin/system-manager', stderr: '', code: 0 };
+          if (cmd === 'sudo') return { stdout: '', stderr: 'system-manager build error', code: 1 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await expect(
+        rebuildStep.run({
+          exec,
+          env: {
+            KIT_MACHINE_TYPE: 'linux',
+            KIT_MACHINE: 'my-vm',
+            KIT_REPO_DIR: '/home/alice/kit',
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    it('throws when home-manager switch fails', async () => {
+      const exec = {
+        run: vi.fn().mockImplementation(async (cmd: string, args: string[]) => {
+          if (cmd === 'which' && args[0] === 'system-manager')
+            return { stdout: '/x/bin/system-manager', stderr: '', code: 0 };
+          if (cmd === 'which' && args[0] === 'home-manager')
+            return { stdout: '/x/bin/home-manager', stderr: '', code: 0 };
+          if (cmd === 'sudo') return { stdout: '', stderr: '', code: 0 };
+          if (cmd === 'home-manager')
+            return { stdout: '', stderr: 'home-manager build error', code: 1 };
+          return { stdout: '', stderr: '', code: 0 };
+        }),
+        spawn: vi.fn(),
+      };
+      await expect(
+        rebuildStep.run({
+          exec,
+          env: {
+            KIT_MACHINE_TYPE: 'linux',
+            KIT_MACHINE: 'my-vm',
+            KIT_REPO_DIR: '/home/alice/kit',
+          },
+        })
+      ).rejects.toThrow();
+    });
+  });
 });

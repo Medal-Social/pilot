@@ -29,7 +29,7 @@ export function initSteps(opts: InitStepsOpts): Step[] {
 
 export interface RunInitOpts {
   machine: string;
-  machineType: 'darwin' | 'nixos';
+  machineType: 'darwin' | 'nixos' | 'linux';
   kitRepoDir: string;
   kitRepoUrl: string;
   provider: FleetProvider;

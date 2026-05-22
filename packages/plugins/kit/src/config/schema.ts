@@ -4,7 +4,7 @@
 import { z } from 'zod';
 
 export const machineSchema = z.object({
-  type: z.enum(['darwin', 'nixos']),
+  type: z.enum(['darwin', 'nixos', 'linux']),
   user: z.string().min(1),
 });
 

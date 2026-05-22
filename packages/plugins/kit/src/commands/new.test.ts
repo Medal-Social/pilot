@@ -74,6 +74,39 @@ describe('scaffoldKit', () => {
     expect(machine).not.toContain('homebrew');
   });
 
+  it('scaffolds linux machines when requested', async () => {
+    const exec = {
+      run: vi.fn().mockResolvedValue({ stdout: '', stderr: '', code: 0 }),
+      spawn: vi.fn(),
+    };
+    const target = join(dir, 'linux-kit');
+
+    await scaffoldKit({
+      target,
+      name: 'linux-kit',
+      machine: 'ubuntu-vm',
+      user: 'ali',
+      type: 'linux',
+      exec,
+    });
+
+    const cfg = JSON.parse(readFileSync(join(target, 'kit.config.json'), 'utf8'));
+    expect(cfg.machines['ubuntu-vm']).toEqual({ type: 'linux', user: 'ali' });
+
+    const flake = readFileSync(join(target, 'flake.nix'), 'utf8');
+    expect(flake).toContain('systemConfigs.ubuntu-vm');
+    expect(flake).toContain('numtide/system-manager');
+    expect(flake).not.toContain('nix-darwin');
+
+    const machine = readFileSync(join(target, 'machines', 'ubuntu-vm.nix'), 'utf8');
+    // system-manager rejects `networking.hostName` — linux scaffolds must not emit it.
+    expect(machine).not.toContain('networking.hostName');
+    expect(machine).toContain('environment.systemPackages');
+
+    // apps.json is darwin-only (Homebrew); linux scaffolds skip it.
+    expect(existsSync(join(target, 'machines', 'ubuntu-vm.apps.json'))).toBe(false);
+  });
+
   it('throws KitError when git init fails', async () => {
     const exec = {
       run: vi.fn().mockImplementation(async (_cmd: string, args: string[]) => {

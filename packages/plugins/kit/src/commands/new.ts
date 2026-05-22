@@ -12,7 +12,7 @@ export interface ScaffoldOpts {
   name: string;
   machine: string;
   user: string;
-  type?: 'darwin' | 'nixos';
+  type?: 'darwin' | 'nixos' | 'linux';
   exec: Exec;
 }
 
@@ -73,7 +73,39 @@ function nixosFlake(name: string, machine: string, user: string): string {
 `;
 }
 
-function machineNix(machine: string, type: 'darwin' | 'nixos'): string {
+function linuxFlake(name: string, machine: string, _user: string): string {
+  return `{
+  description = "${name} — managed by kit";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    system-manager = {
+      url = "github:numtide/system-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { self, nixpkgs, system-manager, home-manager, ... }: {
+    # Non-NixOS Linux (Ubuntu, Debian, …) via system-manager + home-manager.
+    # Activate with:
+    #   sudo system-manager switch --flake .#${machine}
+    #   home-manager switch --flake .#${machine}
+    systemConfigs.${machine} = system-manager.lib.makeSystemConfig {
+      modules = [
+        ({ ... }: { nixpkgs.hostPlatform = "x86_64-linux"; })
+        ./machines/${machine}.nix
+      ];
+    };
+  };
+}
+`;
+}
+
+function machineNix(machine: string, type: 'darwin' | 'nixos' | 'linux'): string {
   if (type === 'darwin') {
     return `{ ... }: let
   apps = builtins.fromJSON (builtins.readFile ./${machine}.apps.json);
@@ -81,6 +113,14 @@ in {
   networking.hostName = "${machine}";
   homebrew.casks = apps.casks;
   homebrew.brews = apps.brews;
+}
+`;
+  }
+  if (type === 'linux') {
+    // system-manager doesn't accept networking.hostName (NixOS-only) — set
+    // the hostname imperatively (e.g. `sudo hostnamectl set-hostname …`).
+    return `{ pkgs, ... }: {
+  environment.systemPackages = with pkgs; [ git curl ];
 }
 `;
   }
@@ -114,22 +154,27 @@ export async function scaffoldKit(opts: ScaffoldOpts): Promise<void> {
   };
   writeFileSync(join(opts.target, 'kit.config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
-  writeFileSync(
-    join(opts.target, 'flake.nix'),
+  const flake =
     type === 'darwin'
       ? darwinFlake(opts.name, opts.machine, opts.user)
-      : nixosFlake(opts.name, opts.machine, opts.user)
-  );
+      : type === 'linux'
+        ? linuxFlake(opts.name, opts.machine, opts.user)
+        : nixosFlake(opts.name, opts.machine, opts.user);
+  writeFileSync(join(opts.target, 'flake.nix'), flake);
 
   writeFileSync(
     join(opts.target, 'machines', `${opts.machine}.nix`),
     machineNix(opts.machine, type)
   );
 
-  writeAppsJson(join(opts.target, 'machines', `${opts.machine}.apps.json`), {
-    casks: [],
-    brews: [],
-  });
+  // apps.json (Homebrew casks/brews) is darwin-only — system-manager has no
+  // declarative apt analog, so linux scaffolds skip the file.
+  if (type === 'darwin') {
+    writeAppsJson(join(opts.target, 'machines', `${opts.machine}.apps.json`), {
+      casks: [],
+      brews: [],
+    });
+  }
 
   writeFileSync(join(opts.target, '.gitignore'), `.envrc\n.direnv/\nresult\nsecrets.local/\n`);
 
