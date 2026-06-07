@@ -17,8 +17,16 @@ describe('detectMachine', () => {
     expect(detectMachine('Alis-MacBook-Pro')).toBe('ali-pro');
   });
 
-  it('detects ada-air from hostname containing ada or air', () => {
+  it('detects ada-air from hostname containing air', () => {
     expect(detectMachine('Adas-MacBook-Air')).toBe('ada-air');
+  });
+
+  it('does NOT map a bare "ada" token to ada-air (ambiguous vs ada-ws)', () => {
+    // `ada` alone can't disambiguate ada-air (darwin) from ada-ws (linux).
+    // It must fall through to null so resolveMachine can use the raw-hostname
+    // (zero-config) path for ada-ws.
+    expect(detectMachine('ada')).toBeNull();
+    expect(detectMachine('ada-ws')).toBeNull();
   });
 
   it('returns null for unknown hostname', () => {
